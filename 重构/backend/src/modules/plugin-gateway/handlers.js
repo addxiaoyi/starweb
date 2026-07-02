@@ -20,7 +20,7 @@ function readRawPayload(req) {
 }
 
 export function createPluginGatewayHandlers(deps) {
-  const { config, jsonErr, getStore, eventBus } = deps
+  const { config, jsonErr, getStore, eventBus, authxWebhookCallbackLimiter: _authxWebhookCallbackLimiter } = deps
 
   function checkMisconfigured(res) {
     if (config.isProd && !isPluginWebhookAuthConfigured()) {

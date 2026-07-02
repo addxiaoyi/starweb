@@ -220,6 +220,19 @@ describe('plugin-gateway handlers', () => {
       assert.strictEqual(res.jsonBody.code, 'unauthorized')
     })
 
+    it('returns 400 when payload is invalid JSON', async () => {
+      const handlers = createPluginGatewayHandlers(createDeps())
+      const res = createMockRes()
+      const body = '{not json}'
+      const signature = signVlaPayload(body, 'vla-webhook-secret')
+      await handlers.bindEmail(
+        { headers: { 'x-vla-signature': signature }, body },
+        res
+      )
+      assert.strictEqual(res.statusCode, 400)
+      assert.strictEqual(res.jsonBody.code, 'validation_error')
+    })
+
     it('publishes PLUGIN_BIND_EMAIL_RECEIVED and returns queued on success', async () => {
       const deps = createDeps()
       const handlers = createPluginGatewayHandlers(deps)
