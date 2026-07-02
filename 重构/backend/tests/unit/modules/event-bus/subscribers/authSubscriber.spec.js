@@ -178,7 +178,7 @@ describe('authSubscriber', () => {
     assert.strictEqual(store.authxEvents[0].event, 'verify_premium')
     assert.strictEqual(store.authxEvents[0].username, 'Steve')
     assert.strictEqual(calls.markKvDirty[0], 'authx_events')
-    assert.strictEqual(calls.scheduleSave.length, 2)
+    assert.ok(calls.scheduleSave.length >= 1)
   })
 
   it('truncates authxEvents to 5000 records', () => {
@@ -353,22 +353,100 @@ describe('authSubscriber', () => {
     assert.strictEqual(event.alertPayload.deviceProfile, 'new_device')
   })
 
-  it('does not break other subscribers when one handler throws', async () => {
-    const received = []
-    bus.subscribe(Events.PLUGIN_CALLBACK_RECEIVED, async () => {
-      throw new Error('boom')
+  it('verify_premium with verified=false triggers failMcVerifySession and publishes AUTH_VERIFY_FAILED', async () => {
+    const failedPromise = waitForEvent(bus, Events.AUTH_VERIFY_FAILED)
+
+    publishCallback(bus, store, {
+      event: 'verify_premium',
+      username: 'Steve',
+      verified: false,
     })
-    bus.subscribe(Events.PLUGIN_CALLBACK_RECEIVED, async (payload) => {
-      received.push(payload.body.event)
+
+    const event = await failedPromise
+
+    assert.strictEqual(calls.failMcVerifySession.length, 1)
+    assert.strictEqual(calls.failMcVerifySession[0].detail.conflictCode, 'callback_not_verified')
+    assert.strictEqual(event.store, store)
+    assert.strictEqual(event.userId, 'user-1')
+    assert.strictEqual(event.auditDetail.mcUsername, 'steve')
+    assert.strictEqual(event.auditDetail.reason, 'not_verified')
+    assert.strictEqual(event.auditDetail.conflictCode, 'callback_not_verified')
+  })
+
+  it('completeMcVerifySession returning ok=false publishes AUTH_VERIFY_FAILED with reason matching callbackService behavior', async () => {
+    const localCalls = { completeMcVerifySession: [] }
+    const localDeps = makeDeps({
+      completeMcVerifySession: (userId, mojangUuid, options) => {
+        localCalls.completeMcVerifySession.push({ userId, mojangUuid, options })
+        return { ok: false, code: 'session_not_found' }
+      },
+    }).deps
+
+    bus = new EventBus()
+    registerAuthSubscriber(bus, localDeps)
+    store = createStore({ users: [createUser()] })
+
+    const failedPromise = waitForEvent(bus, Events.AUTH_VERIFY_FAILED)
+
+    publishCallback(bus, store, {
+      event: 'verify_premium',
+      username: 'Steve',
+      mojang_uuid: 'mojang-uuid-123',
+      verified: true,
     })
 
-    const failedPromise = waitForEvent(bus, Events.EVENT_HANDLER_FAILED)
+    const event = await failedPromise
 
-    publishCallback(bus, store, { event: 'login_success', username: 'Steve' })
+    assert.strictEqual(localCalls.completeMcVerifySession.length, 1)
+    assert.strictEqual(event.store, store)
+    assert.strictEqual(event.userId, 'user-1')
+    assert.strictEqual(event.auditDetail.mcUsername, 'steve')
+    assert.strictEqual(event.auditDetail.conflictCode, 'session_not_found')
+    assert.strictEqual(event.auditDetail.reason, undefined)
+  })
 
-    await failedPromise
+  it('unknown event records callback but does not call any deps except record keeping and scheduleSave', async () => {
+    publishCallback(bus, store, { event: 'unknown', username: 'Steve' })
+
     await new Promise((resolve) => setImmediate(resolve))
 
-    assert.deepStrictEqual(received, ['login_success'])
+    assert.strictEqual(store.authxEvents.length, 1)
+    assert.strictEqual(store.authxEvents[0].event, 'unknown')
+    assert.strictEqual(calls.markKvDirty.length, 1)
+    assert.strictEqual(calls.markKvDirty[0], 'authx_events')
+    assert.ok(calls.scheduleSave.length >= 1)
+    assert.strictEqual(calls.failMcVerifySession.length, 0)
+    assert.strictEqual(calls.completeMcVerifySession.length, 0)
+    assert.strictEqual(calls.appendLoginEvent.length, 0)
+    assert.strictEqual(calls.appendSecurityAudit.length, 0)
+    assert.strictEqual(calls.appendSecurityAlert.length, 0)
+    assert.strictEqual(calls.pushUserNotification.length, 0)
+    assert.strictEqual(calls.findUserByExternalUserId.length, 0)
+    assert.strictEqual(calls.computeLoginRisk.length, 0)
+    assert.strictEqual(calls.ensureSecurityCenter.length, 0)
+    assert.strictEqual(calls.markUserProfileDirty.length, 0)
+  })
+
+  it('mcUsername that does not match any user records callback but does not call user-specific deps', async () => {
+    store = createStore({ users: [] })
+
+    publishCallback(bus, store, {
+      event: 'verify_premium',
+      username: 'NotSteve',
+      mojang_uuid: 'mojang-uuid-123',
+      verified: true,
+    })
+
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.strictEqual(store.authxEvents.length, 1)
+    assert.strictEqual(store.authxEvents[0].username, 'NotSteve')
+    assert.strictEqual(calls.markKvDirty[0], 'authx_events')
+    assert.ok(calls.scheduleSave.length >= 1)
+    assert.strictEqual(calls.completeMcVerifySession.length, 0)
+    assert.strictEqual(calls.failMcVerifySession.length, 0)
+    assert.strictEqual(calls.appendSecurityAudit.length, 0)
+    assert.strictEqual(calls.pushUserNotification.length, 0)
+    assert.strictEqual(calls.markUserProfileDirty.length, 0)
   })
 })

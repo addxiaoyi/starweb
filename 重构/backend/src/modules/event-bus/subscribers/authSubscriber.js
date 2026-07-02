@@ -137,7 +137,6 @@ export function registerAuthSubscriber(bus, deps) {
             const auditDetail = {
               mcUsername,
               source: 'plugin_callback',
-              reason: 'verify_callback_conflict',
               conflictCode: completeResult?.code || 'unknown',
               event: 'verify_premium',
             }
@@ -195,7 +194,7 @@ export function registerAuthSubscriber(bus, deps) {
           } else {
             const auditDetail = {
               mcUsername,
-              reason: 'verify_callback_conflict',
+              reason: reason || 'verify_failed',
               source: 'plugin_callback',
               conflictCode: failResult?.code || 'unknown',
               event: 'verify_failed',

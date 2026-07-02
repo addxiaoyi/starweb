@@ -56,6 +56,30 @@ describe('event-bus', () => {
       assert.ok(failures[0].error.message.includes('handler failure'))
     })
 
+    it('subscribe wraps handlers and emits EVENT_HANDLER_FAILED while allowing other handlers to run', async () => {
+      const received = []
+      bus.subscribe(Events.PLUGIN_CALLBACK_RECEIVED, async () => {
+        throw new Error('boom')
+      })
+      bus.subscribe(Events.PLUGIN_CALLBACK_RECEIVED, async (payload) => {
+        received.push(payload.event)
+      })
+
+      const failures = []
+      bus.subscribe(Events.EVENT_HANDLER_FAILED, (payload) => failures.push(payload))
+
+      bus.publish(Events.PLUGIN_CALLBACK_RECEIVED, { event: 'login_success' })
+
+      await new Promise((resolve) => setImmediate(resolve))
+
+      assert.deepStrictEqual(received, ['login_success'])
+      assert.strictEqual(failures.length, 1)
+      assert.strictEqual(failures[0].event, Events.PLUGIN_CALLBACK_RECEIVED)
+      assert.ok(failures[0].error.message.includes('boom'))
+      assert.strictEqual(logs.errors.length, 1)
+      assert.ok(logs.errors[0][0].includes('boom'))
+    })
+
     it('supports async handlers', async () => {
       const received = []
       bus.subscribe(Events.AUTH_LOGIN_SUCCESS, async (payload) => {
