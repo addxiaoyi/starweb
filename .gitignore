@@ -84,3 +84,6 @@ target/
 *.temp
 *.bak
 ~$*
+
+# Worktrees
+.worktrees/
