@@ -74,7 +74,7 @@ describe('vlaCommandSubscriber', () => {
     assert.deepStrictEqual(calls[0].body, {})
   })
 
-  it('publishes VLA_COMMAND_FAILED and replies ok:false when pluginFetchJson returns 4xx', async () => {
+  it('publishes VLA_COMMAND_FAILED and replies ok:false with result when pluginFetchJson returns >=400', async () => {
     pluginFetchJson = async () => ({ status: 400, json: { message: 'bad request' } })
     const failingBus = new EventBus(logger)
     registerVlaCommandSubscriber(failingBus, { pluginFetchJson, logger })
@@ -86,10 +86,15 @@ describe('vlaCommandSubscriber', () => {
     failingBus.publish(Events.VLA_COMMAND_BAN, { body: { username: 'x' }, _replyTo: requestId })
     const [reply, failed] = await Promise.all([replyPromise, failedPromise])
 
-    assert.deepStrictEqual(reply, { ok: false, error: 'bad request' })
+    assert.deepStrictEqual(reply, {
+      ok: false,
+      result: { status: 400, json: { message: 'bad request' } },
+      error: 'bad request'
+    })
     assert.deepStrictEqual(failed, {
       command: Events.VLA_COMMAND_BAN,
       ok: false,
+      result: { status: 400, json: { message: 'bad request' } },
       error: 'bad request'
     })
     assert.strictEqual(logs.errors.length, 1)

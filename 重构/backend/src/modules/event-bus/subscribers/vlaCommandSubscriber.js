@@ -30,7 +30,19 @@ export function registerVlaCommandSubscriber(bus, deps) {
       try {
         const result = await pluginFetchJson(path, body || {})
         if (result.status >= 400) {
-          throw new Error(result.json?.message || `VLA admin returned ${result.status}`)
+          const error = result.json?.message || `VLA admin returned ${result.status}`
+          logger.error(`vla-command: ${event} failed: ${error}`, { result })
+
+          if (_replyTo) {
+            bus.publish(`vla:command:reply:${_replyTo}`, { ok: false, result, error })
+          }
+          bus.publish(Events.VLA_COMMAND_FAILED, {
+            command: event,
+            ok: false,
+            result,
+            error,
+          })
+          return
         }
 
         if (_replyTo) {

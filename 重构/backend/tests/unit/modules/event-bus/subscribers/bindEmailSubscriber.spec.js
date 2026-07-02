@@ -255,7 +255,7 @@ describe('bindEmailSubscriber', () => {
   })
 
   it('throws link_failed when VLA link command fails', async () => {
-    vla.link = { ok: false, result: { status: 503, json: { error: 'VLA link down' } } }
+    vla.link = { ok: false, result: { status: 503, json: { error: 'VLA link down' } }, error: 'VLA admin returned 503' }
 
     const error = await captureHandlerError(bus, store, {
       email: 'test@example.com',
@@ -270,7 +270,7 @@ describe('bindEmailSubscriber', () => {
   })
 
   it('throws bind_email_failed when VLA notify command fails', async () => {
-    vla.bind = { ok: false, result: { status: 500, json: { error: 'bind notify failed' } } }
+    vla.bind = { ok: false, result: { status: 500, json: { error: 'bind notify failed' } }, error: 'VLA admin returned 500' }
 
     const error = await captureHandlerError(bus, store, {
       email: 'test@example.com',
