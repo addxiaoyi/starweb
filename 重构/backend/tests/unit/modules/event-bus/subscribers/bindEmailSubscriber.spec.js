@@ -164,6 +164,46 @@ describe('bindEmailSubscriber', () => {
     assert.deepStrictEqual(calls.vlaNotify[0], { username: 'Steve', email: 'test@example.com' })
   })
 
+  it('succeeds when VLA commands are skipped by a non-VLA adapter', async () => {
+    const skippedResult = { ok: false, skipped: true, message: '当前未使用 VLA 适配器，跳过命令' }
+    vla.link = { ok: true, result: skippedResult }
+    vla.bind = { ok: true, result: skippedResult }
+
+    store.users.push({
+      id: 'user-1',
+      email: 'test@example.com',
+      linkedMcUsername: null,
+      linkedMcUuid: null,
+    })
+    const completedPromise = waitForEvent(bus, Events.USER_BIND_EMAIL_COMPLETED)
+
+    publishBindEmail(bus, store, {
+      email: 'test@example.com',
+      username: 'Steve',
+      external_user_id: 'ext-1',
+      uuid: 'uuid-1',
+      current_ip: '1.2.3.4',
+    })
+
+    const event = await completedPromise
+
+    assert.strictEqual(event.userId, 'user-1')
+    assert.strictEqual(event.created, false)
+    assert.strictEqual(event.email, 'test@example.com')
+    assert.strictEqual(event.mcUsername, 'Steve')
+    assert.strictEqual(event.mcUuid, 'uuid-1')
+    assert.strictEqual(store.users[0].linkedMcUsername, 'Steve')
+    assert.strictEqual(store.users[0].linkedMcUuid, 'uuid-1')
+    assert.deepStrictEqual(calls.markUserProfileDirty, ['user-1'])
+    assert.strictEqual(calls.scheduleSave.length, 1)
+    assert.strictEqual(calls.appendSecurityAudit.length, 1)
+    assert.strictEqual(calls.appendSecurityAudit[0].action, 'plugin_bind_email')
+    assert.strictEqual(calls.pushUserNotification.length, 1)
+    assert.strictEqual(calls.pushUserNotification[0].userId, 'user-1')
+    assert.strictEqual(calls.vlaLink.length, 1)
+    assert.strictEqual(calls.vlaNotify.length, 1)
+  })
+
   it('successfully binds and creates a new user', async () => {
     const completedPromise = waitForEvent(bus, Events.USER_BIND_EMAIL_COMPLETED)
 

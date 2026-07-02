@@ -101,6 +101,62 @@ describe('vlaCommandSubscriber', () => {
     assert.ok(logs.errors[0][0].includes('bad request'))
   })
 
+  it('publishes VLA_COMMAND_FAILED and replies ok:false when pluginFetchJson returns 200 with json.ok:false', async () => {
+    pluginFetchJson = async () => ({ status: 200, json: { ok: false, error: 'invalid' } })
+    const failingBus = new EventBus(logger)
+    registerVlaCommandSubscriber(failingBus, { pluginFetchJson, config: { authxPluginAdapter: 'vla' }, logger })
+
+    const requestId = 'ok-false-reply'
+    const replyPromise = waitForEvent(failingBus, `vla:command:reply:${requestId}`)
+    const failedPromise = waitForEvent(failingBus, Events.VLA_COMMAND_FAILED)
+
+    failingBus.publish(Events.VLA_COMMAND_BAN, { body: { username: 'x' }, _replyTo: requestId })
+    const [reply, failed] = await Promise.all([replyPromise, failedPromise])
+
+    const result = { status: 200, json: { ok: false, error: 'invalid' } }
+    assert.deepStrictEqual(reply, {
+      ok: false,
+      result,
+      error: 'invalid'
+    })
+    assert.deepStrictEqual(failed, {
+      command: Events.VLA_COMMAND_BAN,
+      ok: false,
+      result,
+      error: 'invalid'
+    })
+    assert.strictEqual(logs.errors.length, 1)
+    assert.ok(logs.errors[0][0].includes('invalid'))
+  })
+
+  it('publishes VLA_COMMAND_FAILED and replies ok:false when pluginFetchJson returns a non-200 2xx status', async () => {
+    pluginFetchJson = async () => ({ status: 204 })
+    const failingBus = new EventBus(logger)
+    registerVlaCommandSubscriber(failingBus, { pluginFetchJson, config: { authxPluginAdapter: 'vla' }, logger })
+
+    const requestId = '204-reply'
+    const replyPromise = waitForEvent(failingBus, `vla:command:reply:${requestId}`)
+    const failedPromise = waitForEvent(failingBus, Events.VLA_COMMAND_FAILED)
+
+    failingBus.publish(Events.VLA_COMMAND_BAN, { body: { username: 'x' }, _replyTo: requestId })
+    const [reply, failed] = await Promise.all([replyPromise, failedPromise])
+
+    const result = { status: 204 }
+    assert.deepStrictEqual(reply, {
+      ok: false,
+      result,
+      error: 'VLA admin returned 204'
+    })
+    assert.deepStrictEqual(failed, {
+      command: Events.VLA_COMMAND_BAN,
+      ok: false,
+      result,
+      error: 'VLA admin returned 204'
+    })
+    assert.strictEqual(logs.errors.length, 1)
+    assert.ok(logs.errors[0][0].includes('204'))
+  })
+
   it('publishes VLA_COMMAND_FAILED and replies ok:false when pluginFetchJson throws', async () => {
     pluginFetchJson = async () => {
       throw new Error('network down')
