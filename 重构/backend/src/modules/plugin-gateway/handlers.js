@@ -4,15 +4,7 @@ import {
   isPluginWebhookAuthConfigured,
   verifyPluginInboundWebhook,
 } from './adapter.js'
-import { handlePluginCallback } from './callbackService.js'
-import { handlePluginBindEmail, PluginBindEmailError } from './bindEmailService.js'
-
-const BIND_EMAIL_ERROR_MESSAGES = {
-  invalid_email: '邮箱格式不正确',
-  validation_error: '请输入有效的游戏角色名（3–16 字符）',
-  mc_already_linked: '该角色已绑定到其他网站账号',
-  email_already_linked: '该邮箱已绑定其他角色，请先解绑',
-}
+import { Events } from '../event-bus/events.js'
 
 function setDeprecationHeaders(res, req) {
   const baseUrl = req.baseUrl || ''
@@ -28,7 +20,7 @@ function readRawPayload(req) {
 }
 
 export function createPluginGatewayHandlers(deps) {
-  const { config, jsonErr, getStore, callbackDeps, bindEmailDeps } = deps
+  const { config, jsonErr, getStore, eventBus } = deps
 
   function checkMisconfigured(res) {
     if (config.isProd && !isPluginWebhookAuthConfigured()) {
@@ -67,20 +59,19 @@ export function createPluginGatewayHandlers(deps) {
       return jsonErr(res, 400, '缺少 event', 'validation_error')
     }
 
-    const store = getStore()
-    const vlaInbound = detectInboundAdapter(req) === 'vla'
-    const remoteAddress = String(
-      req.headers['x-forwarded-for'] || req.socket?.remoteAddress || ''
-    ).trim()
-
-    const result = handlePluginCallback(store, body, {
-      vlaInbound,
-      remoteAddress,
-      receivedAt: new Date().toISOString(),
-      deps: callbackDeps,
+    eventBus.publish(Events.PLUGIN_CALLBACK_RECEIVED, {
+      store: getStore(),
+      body,
+      meta: {
+        vlaInbound: detectInboundAdapter(req) === 'vla',
+        remoteAddress: String(
+          req.headers['x-forwarded-for'] || req.socket?.remoteAddress || ''
+        ).trim(),
+        receivedAt: new Date().toISOString(),
+      },
     })
 
-    return res.json({ ok: true, id: result.record.id })
+    return res.json({ ok: true })
   })
 
   const bindEmail = asyncHandler(async (req, res) => {
@@ -103,25 +94,15 @@ export function createPluginGatewayHandlers(deps) {
       }
     }
 
-    const store = getStore()
+    eventBus.publish(Events.PLUGIN_BIND_EMAIL_RECEIVED, {
+      store: getStore(),
+      body,
+      meta: {
+        receivedAt: new Date().toISOString(),
+      },
+    })
 
-    try {
-      const result = await handlePluginBindEmail(store, body, bindEmailDeps)
-      return res.json(result)
-    } catch (err) {
-      if (err instanceof PluginBindEmailError) {
-        const details = { ...err.payload }
-        delete details.message
-        return jsonErr(
-          res,
-          err.status,
-          BIND_EMAIL_ERROR_MESSAGES[err.code] || err.payload?.message || err.code,
-          err.code,
-          Object.keys(details).length > 0 ? details : undefined
-        )
-      }
-      throw err
-    }
+    return res.json({ ok: true, queued: true })
   })
 
   return { callback, bindEmail }

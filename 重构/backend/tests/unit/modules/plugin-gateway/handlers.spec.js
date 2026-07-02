@@ -2,6 +2,7 @@ import assert from 'node:assert'
 import crypto from 'node:crypto'
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import { config } from '../../../../src/config.js'
+import { Events } from '../../../../src/modules/event-bus/events.js'
 import { createPluginGatewayHandlers } from '../../../../src/modules/plugin-gateway/handlers.js'
 
 function createMockRes() {
@@ -37,51 +38,24 @@ function signVlaPayload(payload, secret) {
   return crypto.createHmac('sha256', secret).update(payload, 'utf8').digest('hex')
 }
 
+function createMockEventBus() {
+  const published = []
+  return {
+    published,
+    publish: (event, payload) => {
+      published.push({ event, payload })
+    },
+  }
+}
+
 function createDeps(overrides = {}) {
+  const eventBus = createMockEventBus()
   return {
     config: { isProd: config.isProd },
     jsonErr: createMockJsonErr(),
     getStore: () => ({ users: [], authxEvents: [] }),
-    callbackDeps: {
-      markKvDirty: () => {},
-      scheduleSave: () => {},
-      markUserProfileDirty: () => {},
-      failMcVerifySession: () => ({ ok: false, code: 'no_session' }),
-      completeMcVerifySession: () => ({ ok: false, code: 'no_session' }),
-      appendLoginEvent: () => ({
-        userId: 'user-1',
-        username: 'Steve',
-        uuid: 'uuid',
-        method: 'microsoft',
-        ip: '1.1.1.1',
-        location: 'CN',
-        asn: 'ASN',
-        riskScore: 0,
-        riskLevel: 'low',
-        deviceProfile: 'trusted_device',
-        externalUserId: null,
-      }),
-      appendSecurityAudit: () => {},
-      appendSecurityAlert: () => {},
-      pushUserNotification: () => {},
-      findUserByExternalUserId: () => null,
-      computeLoginRisk: () => ({ riskScore: 0, riskLevel: 'low', deviceProfile: 'trusted_device' }),
-      ensureSecurityCenter: (store) => store.securityCenter,
-    },
-    bindEmailDeps: {
-      isValidEmailAddress: (email) => /^[^\s@]+@[^\s@]+$/.test(email),
-      findUserByLinkedMcUsername: () => null,
-      ensureSiteUserForPluginEmail: async (store, email) => ({
-        localUser: { id: 'user-1', email, linkedMcUsername: null, linkedMcUuid: null },
-        created: true,
-      }),
-      vlaLinkExternalUser: async () => ({ ok: true, skipped: false }),
-      vlaAdminBindEmail: async () => ({ ok: true, skipped: false }),
-      markUserProfileDirty: () => {},
-      appendSecurityAudit: () => {},
-      pushUserNotification: () => {},
-      scheduleSave: () => {},
-    },
+    eventBus,
+    authxWebhookCallbackLimiter: () => {},
     ...overrides,
   }
 }
@@ -151,21 +125,30 @@ describe('plugin-gateway handlers', () => {
       assert.strictEqual(res.jsonBody.code, 'validation_error')
     })
 
-    it('returns record id on success', async () => {
-      const handlers = createPluginGatewayHandlers(createDeps())
+    it('publishes PLUGIN_CALLBACK_RECEIVED and returns ok on success', async () => {
+      const deps = createDeps()
+      const handlers = createPluginGatewayHandlers(deps)
       const res = createMockRes()
       const body = '{"event":"login_success","username":"Steve"}'
       const signature = signVlaPayload(body, 'vla-webhook-secret')
       await handlers.callback(
         {
-          headers: { 'x-vla-signature': signature },
+          headers: { 'x-vla-signature': signature, 'x-forwarded-for': '10.0.0.1' },
           body,
+          socket: { remoteAddress: '127.0.0.1' },
         },
         res
       )
       assert.strictEqual(res.statusCode, 200)
-      assert.strictEqual(res.jsonBody.ok, true)
-      assert.ok(res.jsonBody.id)
+      assert.deepStrictEqual(res.jsonBody, { ok: true })
+      assert.strictEqual(deps.eventBus.published.length, 1)
+      const published = deps.eventBus.published[0]
+      assert.strictEqual(published.event, Events.PLUGIN_CALLBACK_RECEIVED)
+      assert.deepStrictEqual(published.payload.body, { event: 'login_success', username: 'Steve' })
+      assert.deepStrictEqual(published.payload.store, deps.getStore())
+      assert.strictEqual(published.payload.meta.vlaInbound, true)
+      assert.strictEqual(published.payload.meta.remoteAddress, '10.0.0.1')
+      assert.ok(typeof published.payload.meta.receivedAt === 'string')
     })
 
     it('sets Sunset and Deprecation headers for legacy /api/plugin/authx/callback success', async () => {
@@ -237,8 +220,9 @@ describe('plugin-gateway handlers', () => {
       assert.strictEqual(res.jsonBody.code, 'unauthorized')
     })
 
-    it('returns user binding result on success', async () => {
-      const handlers = createPluginGatewayHandlers(createDeps())
+    it('publishes PLUGIN_BIND_EMAIL_RECEIVED and returns queued on success', async () => {
+      const deps = createDeps()
+      const handlers = createPluginGatewayHandlers(deps)
       const res = createMockRes()
       const body = JSON.stringify({
         email: 'test@example.com',
@@ -252,33 +236,18 @@ describe('plugin-gateway handlers', () => {
         res
       )
       assert.strictEqual(res.statusCode, 200)
-      assert.strictEqual(res.jsonBody.ok, true)
-      assert.strictEqual(res.jsonBody.created, true)
-      assert.strictEqual(res.jsonBody.userId, 'user-1')
-      assert.strictEqual(res.jsonBody.email, 'test@example.com')
-      assert.strictEqual(res.jsonBody.linkedMcUsername, 'Steve')
-      assert.strictEqual(res.jsonBody.linkedMcUuid, 'uuid-1')
-      assert.strictEqual(res.jsonBody.externalUserId, 'user-1')
-    })
-
-    it('maps PluginBindEmailError to the configured status and message', async () => {
-      const deps = createDeps({
-        bindEmailDeps: {
-          ...createDeps().bindEmailDeps,
-          isValidEmailAddress: () => false,
-        },
+      assert.deepStrictEqual(res.jsonBody, { ok: true, queued: true })
+      assert.strictEqual(deps.eventBus.published.length, 1)
+      const published = deps.eventBus.published[0]
+      assert.strictEqual(published.event, Events.PLUGIN_BIND_EMAIL_RECEIVED)
+      assert.deepStrictEqual(published.payload.body, {
+        email: 'test@example.com',
+        username: 'Steve',
+        external_user_id: 'ext-1',
+        uuid: 'uuid-1',
       })
-      const handlers = createPluginGatewayHandlers(deps)
-      const res = createMockRes()
-      const body = JSON.stringify({ email: 'bad', username: 'Steve' })
-      const signature = signVlaPayload(body, 'vla-webhook-secret')
-      await handlers.bindEmail(
-        { headers: { 'x-vla-signature': signature }, body },
-        res
-      )
-      assert.strictEqual(res.statusCode, 400)
-      assert.strictEqual(res.jsonBody.code, 'invalid_email')
-      assert.strictEqual(res.jsonBody.message, '邮箱格式不正确')
+      assert.deepStrictEqual(published.payload.store, deps.getStore())
+      assert.ok(typeof published.payload.meta.receivedAt === 'string')
     })
 
     it('sets Sunset and Deprecation headers for legacy /api/plugin/authx/bind-email success', async () => {
