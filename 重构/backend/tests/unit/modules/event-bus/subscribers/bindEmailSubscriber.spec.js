@@ -283,4 +283,47 @@ describe('bindEmailSubscriber', () => {
     assert.strictEqual(calls.vlaLink.length, 1)
     assert.strictEqual(calls.vlaNotify.length, 1)
   })
+
+  it('throws link_failed with 502 when VLA link command throws without result', async () => {
+    vla.link = { ok: false, error: 'network error' }
+
+    const error = await captureHandlerError(bus, store, {
+      email: 'test@example.com',
+      username: 'Steve',
+    })
+
+    assert.ok(error instanceof PluginBindEmailError)
+    assert.strictEqual(error.code, 'link_failed')
+    assert.strictEqual(error.status, 502)
+    assert.deepStrictEqual(error.payload, { message: 'network error' })
+    assert.strictEqual(calls.vlaLink.length, 1)
+    assert.strictEqual(calls.vlaNotify.length, 0)
+  })
+
+  it('succeeds when the same user re-binds the same username', async () => {
+    store.users.push({
+      id: 'user-1',
+      email: 'test@example.com',
+      linkedMcUsername: 'Steve',
+      linkedMcUuid: 'uuid-1',
+    })
+    const completedPromise = waitForEvent(bus, Events.USER_BIND_EMAIL_COMPLETED)
+
+    publishBindEmail(bus, store, {
+      email: 'test@example.com',
+      username: 'Steve',
+      external_user_id: 'ext-1',
+      uuid: 'uuid-1',
+      current_ip: '1.2.3.4',
+    })
+
+    const event = await completedPromise
+
+    assert.strictEqual(event.userId, 'user-1')
+    assert.strictEqual(event.created, false)
+    assert.strictEqual(event.mcUsername, 'Steve')
+    assert.strictEqual(event.mcUuid, 'uuid-1')
+    assert.strictEqual(calls.vlaLink.length, 1)
+    assert.strictEqual(calls.vlaNotify.length, 1)
+  })
 })

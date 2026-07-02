@@ -34,7 +34,7 @@ describe('vlaCommandSubscriber', () => {
       calls.push({ path, body })
       return { status: 200, json: { ok: true } }
     }
-    registerVlaCommandSubscriber(bus, { pluginFetchJson, logger })
+    registerVlaCommandSubscriber(bus, { pluginFetchJson, config: { authxPluginAdapter: 'vla' }, logger })
   })
 
   it('calls pluginFetchJson for each sample command and replies with ok:true', async () => {
@@ -77,7 +77,7 @@ describe('vlaCommandSubscriber', () => {
   it('publishes VLA_COMMAND_FAILED and replies ok:false with result when pluginFetchJson returns >=400', async () => {
     pluginFetchJson = async () => ({ status: 400, json: { message: 'bad request' } })
     const failingBus = new EventBus(logger)
-    registerVlaCommandSubscriber(failingBus, { pluginFetchJson, logger })
+    registerVlaCommandSubscriber(failingBus, { pluginFetchJson, config: { authxPluginAdapter: 'vla' }, logger })
 
     const requestId = 'err-reply'
     const replyPromise = waitForEvent(failingBus, `vla:command:reply:${requestId}`)
@@ -106,7 +106,7 @@ describe('vlaCommandSubscriber', () => {
       throw new Error('network down')
     }
     const failingBus = new EventBus(logger)
-    registerVlaCommandSubscriber(failingBus, { pluginFetchJson, logger })
+    registerVlaCommandSubscriber(failingBus, { pluginFetchJson, config: { authxPluginAdapter: 'vla' }, logger })
 
     const requestId = 'throw-reply'
     const replyPromise = waitForEvent(failingBus, `vla:command:reply:${requestId}`)
@@ -136,5 +136,32 @@ describe('vlaCommandSubscriber', () => {
       ok: true,
       result: { status: 200, json: { ok: true } }
     })
+  })
+
+  it('replies skipped and publishes VLA_COMMAND_COMPLETED when adapter is not vla', async () => {
+    const nonVlaBus = new EventBus(logger)
+    registerVlaCommandSubscriber(nonVlaBus, {
+      pluginFetchJson,
+      config: { authxPluginAdapter: 'none' },
+      logger,
+    })
+
+    const requestId = 'skip-reply'
+    const replyPromise = waitForEvent(nonVlaBus, `vla:command:reply:${requestId}`)
+    const completedPromise = waitForEvent(nonVlaBus, Events.VLA_COMMAND_COMPLETED)
+
+    nonVlaBus.publish(Events.VLA_COMMAND_BAN, { body: { username: 'x' }, _replyTo: requestId })
+    const [reply, completed] = await Promise.all([replyPromise, completedPromise])
+
+    assert.deepStrictEqual(reply, {
+      ok: true,
+      result: { ok: false, skipped: true, message: '当前未使用 VLA 适配器，跳过命令' },
+    })
+    assert.deepStrictEqual(completed, {
+      command: Events.VLA_COMMAND_BAN,
+      ok: true,
+      result: { ok: false, skipped: true, message: '当前未使用 VLA 适配器，跳过命令' },
+    })
+    assert.strictEqual(calls.length, 0)
   })
 })

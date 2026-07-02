@@ -21,11 +21,29 @@ const POST_COMMANDS = [
  * 若 payload 包含 _replyTo，还会发布对应的 vla:command:reply:<id> 事件。
  */
 export function registerVlaCommandSubscriber(bus, deps) {
-  const { pluginFetchJson, logger = console } = deps
+  const { pluginFetchJson, config, logger = console } = deps
+
+  const skippedResult = {
+    ok: false,
+    skipped: true,
+    message: '当前未使用 VLA 适配器，跳过命令',
+  }
 
   for (const [event, path] of POST_COMMANDS) {
     bus.subscribe(event, async (payload) => {
       const { body, _replyTo } = payload || {}
+
+      if (config?.authxPluginAdapter !== 'vla') {
+        if (_replyTo) {
+          bus.publish(`vla:command:reply:${_replyTo}`, { ok: true, result: skippedResult })
+        }
+        bus.publish(Events.VLA_COMMAND_COMPLETED, {
+          command: event,
+          ok: true,
+          result: skippedResult,
+        })
+        return
+      }
 
       try {
         const result = await pluginFetchJson(path, body || {})
