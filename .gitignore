@@ -1,0 +1,86 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+dist-ssr/
+*.tsbuildinfo
+stats.html
+
+# Runtime data
+data/
+.runtime/
+.cache/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment files
+.env
+.env.*.local
+backend/.env.project-local
+deploy/linux/project-local.env
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+Thumbs.db
+desktop.ini
+
+# Test / QA artifacts
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+coverage/
+
+# Output / analysis / recovery
+output/
+graphify-out/
+recovered/
+minecraft-proxy/
+
+# Delivery / deployment bundles
+delivery/*.tar.gz
+delivery/*.filelist.txt
+delivery/*.sha256
+
+# Local tools / backups
+.tools/backups/
+.tools/*.jar
+.tools/*.db
+.tools/*.tgz
+.tools/*.conf
+.tools/*.secret
+
+# Java / Maven
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+~$*

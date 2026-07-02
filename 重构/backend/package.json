@@ -1,0 +1,69 @@
+{
+  "name": "starmc-local-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/run-with-env-layer.mjs simple src/server.js",
+    "start:overlay": "node scripts/run-with-env-layer.mjs overlay src/server.js",
+    "start:simple": "node scripts/run-with-env-layer.mjs simple src/server.js",
+    "dev": "node scripts/run-with-env-layer.mjs simple --watch src/server.js",
+    "dev:overlay": "node scripts/run-with-env-layer.mjs overlay --watch src/server.js",
+    "dev:simple": "node scripts/run-with-env-layer.mjs simple --watch src/server.js",
+    "lint": "eslint src tests eslint.config.js --max-warnings 0",
+    "lint:strict": "eslint src tests eslint.config.js --max-warnings 0",
+    "lint:fix": "eslint src tests eslint.config.js --fix",
+    "db:migrate": "node scripts/run-with-env-layer.mjs overlay src/db/run-migrate.js",
+    "db:migrate:simple": "node scripts/run-with-env-layer.mjs simple src/db/run-migrate.js",
+    "db:stats": "node scripts/run-with-env-layer.mjs overlay src/db/run-pg-stats.js",
+    "db:stats:simple": "node scripts/run-with-env-layer.mjs simple src/db/run-pg-stats.js",
+    "test": "node --test \"tests/**/*.test.js\" \"tests/**/*.spec.js\"",
+    "test:modules": "node --test tests/security-module-smoke.test.js tests/skin-module-smoke.test.js tests/authx-admin-module-smoke.test.js tests/module-routes-register-smoke.test.js",
+    "doctor": "node scripts/run-with-env-layer.mjs simple scripts/check-auth-stack.mjs",
+    "doctor:overlay": "node scripts/run-with-env-layer.mjs overlay scripts/check-auth-stack.mjs",
+    "doctor:simple": "node scripts/run-with-env-layer.mjs simple scripts/check-auth-stack.mjs",
+    "doctor:auth-closure": "node scripts/run-with-env-layer.mjs simple scripts/check-auth-closure.mjs",
+    "doctor:auth-closure:overlay": "node scripts/run-with-env-layer.mjs overlay scripts/check-auth-closure.mjs",
+    "doctor:auth-closure:simple": "node scripts/run-with-env-layer.mjs simple scripts/check-auth-closure.mjs",
+    "doctor:e2e-auth-mail-gate": "node scripts/run-with-env-layer.mjs simple scripts/e2e-auth-mail-gate.mjs",
+    "doctor:e2e-auth-mail-gate:overlay": "node scripts/run-with-env-layer.mjs overlay scripts/e2e-auth-mail-gate.mjs",
+    "doctor:e2e-auth-mail-gate:simple": "node scripts/run-with-env-layer.mjs simple scripts/e2e-auth-mail-gate.mjs",
+    "doctor:no-docker": "node scripts/run-with-env-layer.mjs simple scripts/doctor-no-docker.mjs",
+    "doctor:no-docker:overlay": "node scripts/run-with-env-layer.mjs overlay scripts/doctor-no-docker.mjs",
+    "doctor:no-docker:simple": "node scripts/run-with-env-layer.mjs simple scripts/doctor-no-docker.mjs",
+    "supertokens:local:start": "node scripts/run-with-env-layer.mjs overlay scripts/supertokens-core-local.mjs start",
+    "supertokens:local:stop": "node scripts/run-with-env-layer.mjs overlay scripts/supertokens-core-local.mjs stop",
+    "supertokens:local:status": "node scripts/run-with-env-layer.mjs overlay scripts/supertokens-core-local.mjs status",
+    "supertokens:local:restart": "node scripts/run-with-env-layer.mjs overlay scripts/supertokens-core-local.mjs restart",
+    "check:security-baseline": "node scripts/check-security-baseline.mjs",
+    "verify": "npm run lint && npm test && npm run check:security-baseline"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.22.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "jszip": "^3.10.1",
+    "multer": "^1.4.5-lts.2",
+    "nodemailer": "^9.0.0",
+    "otplib": "^12.0.1",
+    "pg": "^8.13.1",
+    "supertokens-node": "^24.0.2"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "globals": "^15.15.0"
+  },
+  "overrides": {
+    "axios": "^1.16.0",
+    "follow-redirects": "^1.16.0",
+    "qs": "^6.15.2",
+    "form-data": "^4.0.6",
+    "js-yaml": "^4.2.0"
+  }
+}

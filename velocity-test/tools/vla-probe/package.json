@@ -1,0 +1,23 @@
+{
+  "name": "vla-probe",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local defensive compatibility and load probes for StarVelocity on a Velocity test server.",
+  "scripts": {
+    "compat": "node compat.mjs",
+    "load": "node load.mjs",
+    "load:auth": "node load-auth.mjs",
+    "http": "node http-security.mjs",
+    "mock:lobby": "node mock-lobby.mjs",
+    "paper:prepare": "node ../paper-backend-helper.mjs prepare",
+    "paper:up": "node ../paper-backend-helper.mjs up",
+    "paper:down": "node ../paper-backend-helper.mjs down",
+    "paper:status": "node ../paper-backend-helper.mjs status",
+    "paper:check": "node ../paper-backend-helper.mjs check"
+  },
+  "dependencies": {
+    "mineflayer": "^4.31.0",
+    "minecraft-protocol": "^1.58.0"
+  }
+}

@@ -1,0 +1,50 @@
+export interface ImageConfig {
+  id: string;
+  width: number;
+  height: number;
+}
+
+export const imageConfig: ImageConfig[] = [
+  { id: '1.png', width: 2560, height: 1494 },
+  { id: '2.jpg', width: 2560, height: 1494 },
+  { id: '3.jpg', width: 2560, height: 1494 },
+  { id: '4.jpg', width: 2560, height: 1494 },
+  { id: '5.jpg', width: 2560, height: 1494 },
+  { id: '6.jpg', width: 2560, height: 1494 },
+  { id: '7.jpg', width: 2560, height: 1494 },
+  { id: '8.jpg', width: 2560, height: 1494 },
+  { id: '9.jpg', width: 2560, height: 1494 },
+  { id: '11.jpg', width: 2560, height: 1494 },
+  { id: '12.png', width: 972, height: 567 },
+  { id: '13.jpg', width: 2560, height: 1494 },
+  { id: '14.jpg', width: 2560, height: 1494 },
+  { id: '15.jpg', width: 2560, height: 1494 },
+  { id: '16.png', width: 972, height: 567 },
+  { id: '17.png', width: 972, height: 567 },
+  { id: '18.png', width: 1513, height: 861 },
+  { id: '19.jpg', width: 2560, height: 1494 },
+  { id: '21.jpg', width: 2560, height: 1494 },
+  { id: '22.jpg', width: 2560, height: 1494 },
+  { id: '23.png', width: 2160, height: 1334 },
+  { id: '24.png', width: 2560, height: 1494 },
+  { id: '25.png', width: 2560, height: 1494 },
+  { id: '26.png', width: 2560, height: 1494 },
+  { id: '27.png', width: 2560, height: 1494 },
+  { id: '28.png', width: 2560, height: 1494 },
+  { id: '29.png', width: 2560, height: 1494 },
+  { id: '30.png', width: 2560, height: 1494 },
+  { id: '31.png', width: 2560, height: 1494 },
+  { id: '32.png', width: 2560, height: 1494 },
+  { id: '33.png', width: 2560, height: 1494 },
+  { id: '34.png', width: 2560, height: 1494 },
+  { id: '35.png', width: 2560, height: 1494 },
+  { id: '36.png', width: 1336, height: 1080 },
+  { id: '37.png', width: 1920, height: 1080 },
+  { id: '38.png', width: 1920, height: 1080 },
+  { id: '39.png', width: 1920, height: 1080 },
+  { id: '40.png', width: 1920, height: 1080 },
+  { id: '41.png', width: 648, height: 400 },
+  { id: '42.png', width: 648, height: 400 },
+  { id: '43.png', width: 1022, height: 684 },
+  { id: '44.png', width: 648, height: 365 }
+];

@@ -1,0 +1,94 @@
+name: starmc
+
+# 可选：偏好裸机开发时可不启用本文件——在宿主机安装 SuperTokens Core（及可选 PostgreSQL）即可，
+# backend/.env 只须指向实际地址。详见 backend/README.md；自检：cd backend && npm run doctor
+#
+# 需要一键拉起依赖时再使用：docker compose up -d supertokens-db supertokens site-postgres
+services:
+  # SuperTokens Core + MySQL（本地化登录，替代原 Casdoor）
+  # 启动：docker compose up -d supertokens-db supertokens
+  # backend/.env：SUPERTOKENS_CONNECTION_URI=http://127.0.0.1:3567
+  # 若后端在 compose 内运行可改为 http://supertokens:3567
+  supertokens-db:
+    image: mysql:8.0
+    container_name: starmc-supertokens-db
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: supertokens
+    ports:
+      - "3307:3306"
+    restart: unless-stopped
+
+  supertokens:
+    image: registry.supertokens.io/supertokens/supertokens-mysql:11.4.2
+    container_name: starmc-supertokens
+    depends_on:
+      - supertokens-db
+    ports:
+      - "3567:3567"
+    environment:
+      MYSQL_CONNECTION_URI: mysql://root:root@supertokens-db:3306/supertokens
+    restart: unless-stopped
+
+  # 可选：网站业务扩展（player_state 等），与 SuperTokens 的 MySQL 分离。
+  # 启动：docker compose up -d site-postgres
+  # backend/.env：DATABASE_URL=postgres://starmc:starmc@127.0.0.1:5433/starmc_site
+  site-postgres:
+    image: postgres:16-alpine
+    container_name: starmc-site-pg
+    environment:
+      POSTGRES_USER: starmc
+      POSTGRES_PASSWORD: starmc
+      POSTGRES_DB: starmc_site
+    ports:
+      - "5433:5432"
+    restart: unless-stopped
+
+  backend:
+    image: node:20-alpine
+    container_name: starmc-backend
+    working_dir: /app
+    ports:
+      - "8787:8787"
+      - "8788:8788"
+    # 加载与本地 npm 相同的环境变量；若无此文件请先复制 backend/.env.example 为 backend/.env
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: development
+      PORT: 8787
+      PLUGIN_PORT: 8788
+      CORS_ORIGIN: http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173
+      SUPERTOKENS_CONNECTION_URI: http://supertokens:3567
+      AUTH_API_DOMAIN: http://localhost:5173
+      AUTH_WEBSITE_DOMAIN: http://localhost:5173
+    volumes:
+      - ./backend:/app
+      - backend_node_modules:/app/node_modules
+    command: sh -c "npm install && npm run start"
+    depends_on:
+      - supertokens
+    restart: unless-stopped
+
+  web:
+    image: node:20-alpine
+    container_name: starmc-web
+    working_dir: /app
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_LOCAL_API_TARGET: http://backend:8787
+      VITE_LOCAL_PLUGIN_TARGET: http://backend:8788
+      VITE_AUTH_API_DOMAIN: http://localhost:5173
+      VITE_AUTH_WEBSITE_DOMAIN: http://localhost:5173
+    volumes:
+      - .:/app
+      - web_node_modules:/app/node_modules
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    restart: unless-stopped
+
+volumes:
+  backend_node_modules:
+  web_node_modules:

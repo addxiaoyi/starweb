@@ -1,0 +1,565 @@
+# =============================================================================
+# Velocity-Limbo-Auth — 主配置文件（config.yml）
+#
+# 【获取与延伸阅读（链接）】
+#   Velocity 代理下载： https://papermc.io/downloads/velocity
+#   Java / JDK： https://adoptium.net/
+#     默认 jar 构建为 Java 17（配合 Velocity 3.4.x）；Maven -Pvelocity35 为 Java 21（配合 Velocity 3.5.x）。运行时代码与代理大版本应一致。
+#     Default jar is built for Java 17 (Velocity 3.4.x); Maven -Pvelocity35 targets Java 21 (Velocity 3.5.x). Runtime JVM should match your Velocity line.
+#   Paper 文档门户（含 Velocity）： https://docs.papermc.io/
+#   本项目「网站 / 皮肤站 ⟷ 插件」对接说明：同仓库 `velocity-limbo-auth/开发清单与网站对接全流程.md`
+#   网站后端环境变量教学： `重构/backend/.env.example`（与 PUBLIC_API_BASE_URL、Webhook 密钥等对应）
+#
+# 【文件位置】首次启动后通常位于：
+#   Velocity 目录/plugins/velocity-limbo-auth/config.yml
+#   （实际路径以 Velocity 与本插件 @DataDirectory 为准）
+#   若不存在，会从 jar 内复制本默认文件。
+#
+# 【如何重载】控制台或持有权限者执行：/vla reload
+#   会重载本文件、message.yml、内嵌 HTTP 端口/密钥、Redis 限流连接、Hasher/锁定规则等。
+#   数据库连接池、Limbo 世界结构仍以「重启代理」为准较稳妥。
+#
+# 【Limbo】LimboAPI 已并入本插件 jar，由启动流程内联初始化；不要在 plugins 再装独立 limboapi-*.jar（会冲突）。
+#
+# 【环境变量占位 ${ENV:名称}】配置里可写 ${ENV:MY_SECRET} 或 ${MY_SECRET}，启动加载本文件时
+#   会替换为操作系统环境变量（未设置则变成空字符串）。适合 Docker/K8s/systemd 注入密钥，避免写进明文 YAML。
+#
+# ---------------------------------------------------------------------------
+# 上线前建议核对（可按需逐项配置）
+# ---------------------------------------------------------------------------
+#   □ database：生产环境改用 mysql / postgresql / jdbc，勿长期使用默认弱密码
+#   □ security.device-fingerprint-salt：改为长随机字符串并保密
+#   □ http-api.api-key：改为长随机字符串；bind-address:port 仅内网或 VPN 访问
+#   □ 若 HTTP 会暴露到非内网：建议 write-security（IP 白名单 + 可选 HMAC）、敏感 GET 限流，或由反代 + 防火墙仅放行网站 IP
+#   □ 未登录改密（邮箱+验证码）：流程长、需防刷，建议在网站实现并调用本插件 POST /v1/admin/password；也可只在插件侧做（本版未内置该流程）
+#   □ http-api.allow-writes：仅当网站需要 POST 管理（封禁/改密/绑定网站账号等）时设为 true
+#   □ email：玩家使用 /account bindemail 时，enabled: true 并填好 SMTP
+#   □ skin：登录后需向皮肤服/网站同步时，enabled: true 并设置 provider、地址、密钥
+#   □ security.rate-limit.redis：多台 Velocity 共用限流计数时 enabled: true
+#
+# 【指令速查】
+#   管理（权限 velocitylimboauth.command.admin）：/vla reload | ban | unban |
+#     changepass | unregister | bindemail | unbinddevice | import authme-sqlite <路径> | backup
+#   玩家：/account changepass | devices | bindemail | verifyemail | requestpassreset | verifyresetcode | resetpass
+#     （重置密码链未认证也可用；其余多数子命令需已通过本插件认证）
+#
+# ---------------------------------------------------------------------------
+# 功能总览（与当前代码一致）| Feature overview (matches current code)
+# ---------------------------------------------------------------------------
+# 【核心 | Core】
+#   内嵌 LimboAPI，单 jar 初始化虚拟世界与协议；勿与独立 limboapi 插件并存。
+#   Embedded LimboAPI: single-jar virtual world + protocol; do not install a separate limboapi plugin.
+#   Maven 默认构建 Velocity 3.4.x + Java 17；profile「velocity35」→ 3.5.x + Java 21。
+#   Default Maven build targets Velocity 3.4.x + Java 17; profile "velocity35" → 3.5.x + Java 21.
+#   可选 security-strict：占位盐/密钥等不安全时拒绝启动。
+#   Optional security-strict: refuse startup if placeholder salts/keys are still unsafe.
+#   Limbo 初始化失败：插件仍加载，禁用 Limbo 登录；需密码玩家在 PreLogin 被拒。
+#   If Limbo core fails: plugin keeps loading, Limbo auth disabled; password-required players denied at PreLogin.
+#   HTTP 绑定失败：禁用内嵌 HTTP，其余继续。
+#   If embedded HTTP bind fails: HTTP disabled, other features continue.
+#   文案 message.yml / message_<locale>.yml；general.locale。
+#   Messages: message.yml / message_<locale>.yml; general.locale.
+#
+# 【认证与 Limbo | Auth & Limbo】
+#   聊天栏注册/登录（非命令）、BossBar 倒计时、超时与取消关键词断线。
+#   Chat-based register/login (not commands), BossBar countdown, timeout, cancel keywords disconnect.
+#   PreLogin：封禁、用户名正则、设备指纹、限流、正版/基岩/设备免密分支。
+#   PreLogin: ban check, username regex, device fingerprint, rate limits, premium/bedrock/device auto-login branches.
+#   未认证：可拦聊天与命令（白名单）、bcrypt、暴力破解锁定、Limbo 内聊天限流。
+#   Unauthenticated: optional chat/command block (whitelist), bcrypt, lockout, in-Limbo chat rate limit.
+#   设备绑定与受信设备免密；会话注册与断线清理。
+#   Device binding and trusted-device skip-password; session registry and disconnect cleanup.
+#
+# 【数据库 | Database】
+#   SQLite / MySQL / MariaDB / PostgreSQL / JDBC URL；HikariCP；启动迁移。
+#   SQLite / MySQL / MariaDB / PostgreSQL / JDBC URL; HikariCP; migrations on startup.
+#   /vla import authme-sqlite <path>；/vla backup（仅 sqlite 文件复制）。
+#   /vla import authme-sqlite <path>; /vla backup (sqlite file copy only).
+#
+# 【正版 | Premium】
+#   可选 Mojang 校验与缓存；离线/正版冲突策略（prefer-premium-uuid 等）。
+#   Optional Mojang verify + cache; offline/premium conflict modes.
+#   基岩 Floodgate UUID 不走误判为正版免密。
+#   Bedrock Floodgate UUID never treated as premium auto-login by mistake.
+#
+# 【同伴插件 | Companion integrations】
+#   探测 Floodgate / Geyser / Via / SkinsRestorer 等；基岩宽松用户名、免密、占位建档、防刷与 UUID 策略。
+#   Probe Floodgate/Geyser/Via/SkinsRestorer; bedrock username rules, skip-password, placeholder accounts, anti-abuse, UUID policy.
+#   可选：皮肤 JSON 写入 SkinsRestorer（反射）。
+#   Optional: push parsed skin JSON into SkinsRestorer (reflection).
+#
+# 【皮肤 | Skins】
+#   多 provider（official / custom URL / Blessing / LittleSkin 等）、缓存与失败降级、同步/应用超时、出站 webhook 签名校验。
+#   Multiple providers, cache + fallback, sync/apply timeouts, signed outbound skin webhooks.
+#   link.website-api-base / link.shared-secret（站点对接备忘）。
+#   link.website-api-base / link.shared-secret (site integration hooks).
+#
+# 【邮件 | Email】
+#   SMTP：绑定邮箱验证码、密码重置链、登录异常邮件模板（启用时）。
+#   SMTP: bind-email codes, password-reset flow, login-alert templates when enabled.
+#
+# 【Redis | Redis】
+#   可选 Jedis：多代理共享 PreLogin/聊天/HTTP 敏感接口限流计数。
+#   Optional Jedis: shared rate-limit counters across proxies.
+#
+# 【内嵌 HTTP API | Embedded HTTP API】
+#   JDK HttpServer；/v1/health、Prometheus 指标、封禁/用户/设备/皮肤/安全只读；可选 POST 管理写入（allow-writes、IP 白名单、可选 HMAC）。
+#   JDK HttpServer; /v1/health, Prometheus, ban/user/device/skin/security reads; optional POST admin (allow-writes, IP allowlist, optional HMAC).
+#
+# 【出站 Webhook | Outbound webhooks】
+#   http-api.outbound-webhooks（可合并 integrations.webhooks）；HMAC 签名 POST JSON。
+#   http-api.outbound-webhooks (optional merge integrations.webhooks); HMAC-signed JSON POST.
+#   事件示例：login_success、password_changed、user_deleted、device_unbound、external_user_linked、skin_refreshed、security_alert。
+#   Example events: login_success, password_changed, user_deleted, device_unbound, external_user_linked, skin_refreshed, security_alert.
+#
+# 【内部 Hook | In-process hooks】
+#   HookManager：同进程 VlaHookListener 与核心 emit 并行。
+#   HookManager: in-process VlaHookListener parallel to core emit.
+#
+# 【指标 | Metrics】
+#   Prometheus 文本：认证成功/失败、自动登录分类、Limbo 滞留等（见 /v1/metrics/prometheus）。
+#   Prometheus text: auth success/fail, auto-login breakdown, Limbo dwell, etc.
+#
+# 【管理指令 | Admin commands】
+#   /vla：reload、ban、unban、changepass、unregister、bindemail、unbinddevice、import、backup（须权限）。
+#   /vla: reload, ban, unban, changepass, unregister, bindemail, unbinddevice, import, backup (permission required).
+# 【玩家指令 | Player commands】
+#   /account：changepass、devices、bindemail、verifyemail、邮箱重置链（未认证也可用）。
+#   /account: changepass, devices, bindemail, verifyemail, email reset chain (usable while unauthenticated).
+#
+# 【安全告警 | Security alerts】
+#   SecurityAlertService → webhook security_alert + 可选邮件。
+#   SecurityAlertService → webhook security_alert + optional email.
+#
+# 【补充（续）| Continued】
+#   下方 limbo-world：维度、出生坐标、游戏模式、VOID 或结构文件加载与偏移等。
+#   Section limbo-world below: dimension, spawn, gamemode, VOID vs schematic file + offsets.
+#   内嵌 Limbo 使用独立 bStats 工厂（与代理自带 Metrics 隔离）；失败时整段 Limbo 可能降级，见上文「核心」。
+#   Embedded Limbo uses an isolated bStats Metrics factory; if it fails, Limbo may degrade—see Core above.
+#   启动时若检测到独立插件 id「limboapi」会告警：勿与内嵌 Limbo 并存。
+#   Startup warns if a separate "limboapi" plugin is present—do not run alongside embedded Limbo.
+#
+# 【HTTP 路径速查 | HTTP route cheat sheet】（http-api.enabled 且监听成功时）
+#   GET  /v1/health  |  GET /v1/metrics/prometheus  |  GET /v1/ban  |  GET /v1/user/exists | detail | profiles | devices
+#   GET  /v1/skin/profile  |  GET /v1/security/events
+#   POST /v1/admin/ban | password | delete-user | bind-email | unbind-device | kick-online
+#   POST /v1/skin/refresh  |  POST /v1/link/external-user
+#   写入类接口受 allow-writes、write-security（IP / HMAC）与敏感限流约束。
+#   Write routes require allow-writes, write-security (IP / HMAC), and sensitive rate limits as configured.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# 常规
+# ---------------------------------------------------------------------------
+general:
+  # true：控制台输出较多调试信息（皮肤桥 HTTP、邮件流程等）。生产建议 false。
+  debug: false
+
+  # true：若仍为占位 device-fingerprint-salt、http-api.api-key、skin.callback-secret（已启用 webhook）
+  # 则拒绝启动。开发环境保持 false；上线改密钥后可设 true 强制自检。
+  security-strict: false
+
+  # 文案语言标签。若数据目录存在 message_<locale>.yml（如 zh_CN → message_zh_CN.yml）则优先加载，否则使用 message.yml。
+  locale: "zh_CN"
+
+# 命名与 UUID： https://minecraft.wiki/w/Player#Username 、 https://minecraft.wiki/w/UUID
+integrations:
+  companion-hooks-enabled: true
+  floodgate:
+    relaxed-username-regex: true
+    username-regex-override: ""
+  skin-plugins:
+    skinsrestorer:
+      auto-sync: true
+
+# ---------------------------------------------------------------------------
+# 数据库（HikariCP）
+#
+# 所有 SQL 使用 PreparedStatement；只需改类型与连接参数即可切换数据库。
+#
+# type 可选：
+#   sqlite     — 本地单文件，适合测试或小服
+#   mysql      — MySQL 5.7+ / 8.x
+#   mariadb    — 与 mysql 共用下列 mysql-* 字段
+#   postgresql — PostgreSQL
+#   jdbc       — 自定义完整 JDBC URL（填写 database.jdbc-url），方言由 URL 推断（常用云数据库）
+# ---------------------------------------------------------------------------
+database:
+  type: "sqlite"
+
+  # --- 仅 sqlite ---
+  # 相对于本插件数据目录的文件名；目录不存在会自动创建。
+  sqlite-file: "data.db"
+
+  # --- mysql / mariadb 共用 ---
+  mysql-host: "127.0.0.1"
+  mysql-port: 3306
+  mysql-database: "velocity_auth"
+  mysql-username: "root"
+  mysql-password: "password"
+  # 附加在 JDBC URL 的查询参数（不要写开头的 ?）。
+  mysql-params: "useSSL=false&serverTimezone=UTC&characterEncoding=utf8"
+
+  # --- postgresql ---
+  postgresql-host: "127.0.0.1"
+  postgresql-port: 5432
+  postgresql-database: "velocity_auth"
+  postgresql-username: "postgres"
+  postgresql-password: "password"
+  postgresql-params: ""
+
+  # --- 仅 type=jdbc ---
+  jdbc-url: ""
+  jdbc-username: ""
+  jdbc-password: ""
+
+  # --- 连接池（所有 type 共用）---
+  pool-maximum-pool-size: 10
+  pool-minimum-idle: 2
+  connection-timeout-millis: 15000
+
+# ---------------------------------------------------------------------------
+# 安全策略
+#
+# Limbo 内聊天认证限流、PreLogin 连接限流、登录失败锁定（内存，重启清零）。
+# 可选 Redis：多台代理共用计数（固定时间窗）；Redis 故障时自动退回内存限流。
+# ---------------------------------------------------------------------------
+security:
+  # BCrypt 成本参数（约 4–31，常用 10–12）。越大越耗 CPU。
+  bcrypt-cost: 10
+
+  # 设备指纹盐：务必改为长随机串并保密，降低被猜中或碰撞的风险。
+  device-fingerprint-salt: "change-me-please"
+
+  # true：认证成功后写入 vla_devices（设备绑定）。
+  device-binding-enabled: true
+
+  # true：PreLogin 若指纹与库中信任记录一致，直接跳过 Limbo（优先于正版免密）。
+  trust-same-device: true
+
+  # true：当设备未受信时，完成密码/注册后在 Limbo 聊天询问是否绑定本设备。
+  # false：保持旧行为：认证成功后自动绑定/受信。
+  device-binding-prompt-enabled: true
+
+  # 用户回复关键字：输入任意一个（大小写不敏感）视为“绑定设备”。
+  device-binding-prompt-bind-keywords: "bind,绑定,yes,是"
+
+  # 用户回复关键字：输入任意一个（大小写不敏感）视为“跳过绑定”。
+  device-binding-prompt-skip-keywords: "skip,不绑定,no,否"
+
+  # --- Limbo 内「每次输入密码/注册步骤」限流 ---
+  rate-limit-chat-auth-max-per-minute: 24
+  rate-limit-chat-auth-window-seconds: 60
+  rate-limit-chat-min-interval-ms: 300
+
+  # --- PreLogin（尚未进服）限流：按 IP、按用户名各一组计数 ---
+  rate-limit-prelogin-max-per-ip: 24
+  rate-limit-prelogin-max-per-user: 16
+  rate-limit-prelogin-window-seconds: 60
+
+  # --- 登录失败锁定（按用户名，内存）---
+  # 在 lockout-window-seconds 内失败达 lockout-max-failures 次，锁定 lockout-duration-seconds 秒。
+  lockout-max-failures: 8
+  lockout-window-seconds: 600
+  lockout-duration-seconds: 900
+
+  # ---------------------------------------------------------------------------
+  # 登录异常告警（异地登录 / 新设备登录）
+  # ---------------------------------------------------------------------------
+  alerts:
+    enabled: true
+    # 同一玩家同一告警类型两次之间的最小间隔（秒），避免邮件刷屏
+    min-interval-seconds: 3600
+
+  # PreLogin 用户名正则；默认对齐 Java 版 3–16 字符习惯，参阅 https://minecraft.wiki/w/Player#Username
+  username-regex: "^[a-zA-Z0-9_]{3,16}$"
+
+  # Limbo 注册「第一次输入密码」的正则；已存在用户登录时不检查此项，只校验库内哈希。
+  password-regex: "^.{6,32}$"
+
+  # --- 可选：Redis 限流（与上方次数配置共用，改为在 Redis 内计数）---
+  rate-limit:
+    redis:
+      # false：仅本机内存限流（每台 Velocity 各自统计）。
+      # true：使用下列 Redis；适合多节点共用同一套限流。
+      enabled: false
+      host: "127.0.0.1"
+      port: 6379
+      # 无密码则填空字符串 ""
+      password: ""
+      database: 0
+      #   连接超时（毫秒）；过短易在网络抖动时频繁回落本机限流。
+      timeout-millis: 2000
+
+# ---------------------------------------------------------------------------
+# 登录流程（Limbo 聊天注册 / 登录）
+# ---------------------------------------------------------------------------
+login-flow:
+  # 进入 Limbo 起算总倒计时秒数（注册两步 + 登录共用）。
+  auth-timeout-seconds: 120
+
+  bossbar-enabled: true
+  # 颜色：PINK | BLUE | RED | GREEN | YELLOW | PURPLE | WHITE
+  bossbar-color: "BLUE"
+  # 样式：PROGRESS | NOTCHED_6 | NOTCHED_10 | NOTCHED_12 | NOTCHED_20
+  bossbar-overlay: "PROGRESS"
+  # Boss 栏标题对应 message.yml 中的键，例如 bossbar.countdown
+  bossbar-title-message-key: "bossbar.countdown"
+
+  # true：未认证时拦截玩家执行命令（建议保持 true，避免绕过 Limbo）。
+  block-commands-when-unauthenticated: true
+
+  # 未认证时仍允许的「命令根」（不含参数）。例："/help,/hub" 或 ["help","/hub"]
+  unauthenticated-command-whitelist: ""
+
+  # Limbo 内聊天与下列词完全一致（不区分大小写）时主动断开；留空可关闭。
+  # 可改为列表：["quit","cancel","退出"]
+  cancel-keywords: "quit,cancel,exit,退出"
+
+# ---------------------------------------------------------------------------
+# 正版（在线 UUID）免密
+#
+# UUID 与离线算法不一致时视为在线模式；未触发「设备信任」时可自动通过并建档/更新。
+# ---------------------------------------------------------------------------
+premium:
+  enabled: true
+  # true：首次进服的正版玩家自动建库并写入随机占位密码（免密进服）。false：不预建档，须进 Limbo 注册并设密码。
+  auto-register-placeholder-password: true
+
+  # ---------------------------------------------------------------------------
+  # Minecraft/Mojang 正版验证 API：
+  # 用于判断某用户名是否为正版玩家（基于 Mojang UUID）。
+  # ---------------------------------------------------------------------------
+  verify-api:
+    enabled: true
+    # 连接与读取超时（毫秒）
+    timeout-millis: 1500
+    # 反查缓存 TTL（秒）；降低 PreLogin 触发频率
+    cache-ttl-seconds: 300
+
+  # 离线账号与正版账号冲突处理：
+  #   prefer-premium-uuid：更新 vla_users.uuid/auth_source 为正版 UUID
+  #   keep-local：保留本地离线 uuid/auth_source
+  #   disallow-offline：强制走密码流程
+  conflict-mode: "prefer-premium-uuid"
+
+# ---------------------------------------------------------------------------
+# 邮件（SMTP + 数据库验证码）
+#
+# 流程：玩家执行 /account bindemail <邮箱> 后收信，再 /account verifyemail <验证码>。
+#
+# 必配：enabled: true，且 smtp-host、smtp-username、smtp-password、from-address 正确。
+# 发信为阻塞 IO，插件已放在工作线程执行，勿将 async.worker-pool-size 设为 0。
+#
+# 模板占位：bind-mail-body 可用 {player} {code} {minutes}
+# ---------------------------------------------------------------------------
+email:
+  enabled: false
+  smtp-host: ""
+  smtp-port: 587
+  smtp-username: ""
+  smtp-password: ""
+  smtp-starttls: true
+  from-address: "noreply@example.com"
+  verification-code-length: 6
+  verification-code-expire-minutes: 15
+  bind-mail-subject: "[VLA] 邮箱验证码"
+  bind-mail-body: "玩家 {player} 您好，\n您的邮箱绑定验证码为：{code}\n请于 {minutes} 分钟内在游戏内使用 /account verifyemail <验证码> 完成绑定。"
+
+  # 密码找回（重置）验证码：发送到已绑定邮箱
+  reset-mail-subject: "[VLA] 密码重置验证码"
+  reset-mail-body: "玩家 {player} 您好，\n您的密码重置验证码为：{code}\n请于 {minutes} 分钟内在游戏内使用 /account verifyresetcode <验证码> 完成验证并设置新密码。"
+  reset-verified-expire-minutes: 10
+
+  # 登录异常告警邮件（新设备/异地）
+  login-alert-subject: "[VLA] 登录异常告警"
+  login-alert-body: "玩家 {player} 您好：\n发现登录异常：{type}\nIP：{ip}\n设备指纹：{fingerprint}\n如非本人操作请及时修改密码并检查设备绑定。"
+
+# ---------------------------------------------------------------------------
+# 皮肤同步（HTTP 拉取 + 可选网站 Webhook）
+#
+# 流程：登录成功后：按 provider 向公开或自建 API 拉取档案 JSON。
+#
+# 统一回调建议：
+#   - 优先使用 `http-api.outbound-webhooks`，订阅事件 `skin_refreshed`
+#   - 这样所有“网站回调”只需要一套接口/签名配置
+#
+# 兼容模式：
+#   - 若你仍填写本段的 webhook-url/callback-secret，则当且仅当 `outbound-webhooks` 未订阅 `skin_refreshed`
+#     时，本插件才会执行旧的皮肤 webhook POST。
+#
+# provider：
+#   official — Mojang Session（按 UUID）
+#   littleskin — littleskin-base-url + /csl/<玩家名>.json
+#   blessing — blessing-base-url（Yggdrasil session profile，见代码默认拼接）
+#   custom — 使用下方 custom-profile-url 模板自组 GET 地址（自建皮肤站/项目皮肤站）
+#
+# 生产环境务必修改 callback-secret；若开启本段旧皮肤 webhook，则网站端用同一密钥验签。
+# 说明：本插件会在玩家在线时把 textures 写入 GameProfile，用于客户端侧显示；预览/回退取决于客户端与资源重载策略。
+# ---------------------------------------------------------------------------
+skin:
+  # 本地联调：与「重构/backend」GET /api/public/skin-profile/{username}.json 一致；生产改为 https 公网基址。
+  enabled: true
+  provider: "custom"
+  blessing-base-url: ""
+  littleskin-base-url: "https://littleskin.cn"
+  # provider 为 custom 时生效：档案 JSON 的 GET 地址模板（勿在代码里写死域名）。
+  # 占位符：{username}（URL 编码）、{uuid}（带短横线）、{uuid_nodash}
+  # 示例：https://your-skin-site.example/api/profile/{username}.json
+  custom-profile-url: "http://127.0.0.1:8787/api/public/skin-profile/{username}.json"
+  custom-http-method: "GET"
+  custom-body-template: ""
+  custom-headers: {}
+  # 与 Webhook HMAC、网站校验共用；请改为长随机字符串
+  # 兼容旧版 skin webhook（当你未配置 outbound-webhooks 订阅皮肤回调时才会用到）
+  callback-secret: "${ENV:VLA_SKIN_CALLBACK_SECRET}"
+  # 非空则 POST 精简皮肤 JSON 到此 URL（供网站/皮肤站接收）
+  webhook-url: ""
+  sync-timeout-millis: 10000
+  user-agent: "Velocity-Limbo-Auth/1.0"
+  # 登录流程中“拉取+应用皮肤”的最大等待时间（毫秒）；超时将继续进入服务器但皮肤可能延迟可见。
+  apply-timeout-millis: 3000
+
+  # ---------------------------------------------------------------------------
+  # 皮肤缓存（落库 vla_skin_profiles）：
+  #  - 命中缓存：减少对皮肤站/会话服务器的依赖
+  #  - 拉取失败 fallback：使用最后一次成功拉取的缓存
+  # ---------------------------------------------------------------------------
+  cache:
+    enabled: true
+    # 缓存新鲜度 TTL（秒）；0 表示不做过期判断
+    ttl-seconds: 3600
+    # true：拉取失败时即使缓存已过期也允许使用（确保尽量不停皮肤）
+    fallback-on-failure: true
+
+# ---------------------------------------------------------------------------
+# 内嵌 HTTP API（JDK HttpServer，并发见 async.worker-pool-size）
+#
+# 【安全】api-key 须足够长且随机；bind-address 若为 0.0.0.0 则对公网开放，务必加防火墙或反代仅内网。
+#
+# 【只读 GET】（均需请求头 api-key-header: api-key）
+#   GET /v1/health — 健康检查（含 database_ok、插件 version）
+#   GET /v1/metrics/prometheus — Prometheus 文本指标（认证成功/失败、Limbo 滞留等），须 API Key
+#   GET /v1/ban?name=玩家 — 是否封禁（expose-ban-check: false 时返回 403）
+#   GET /v1/user/exists?name=玩家 — 账号是否存在
+#   GET /v1/user/detail?name=玩家 — 详情（含 external_user_id、邮箱是否验证等，供网站/仪表盘）
+#   GET /v1/user/profiles?external_user_id=网站用户ID&limit= — 同站账号下所有游戏角色（小号列表）
+#   GET /v1/security/events?name=玩家&limit= — 最近登录审计（设备指纹、状态等）
+#
+# 【写入 POST】须同时满足：allow-writes: true + 正确 API Key；可选 IP 白名单 + HMAC（见 write-security）。
+#   POST /v1/admin/ban               body: {"username":"","banned":true,"reason":""}
+#   POST /v1/admin/password          body: {"username":"","password":""}（服务端 bcrypt）
+#   POST /v1/admin/delete-user       body: {"username":""}
+#   POST /v1/admin/bind-email        body: {"username":"","email":""}（直接标记已验证）
+#   POST /v1/admin/unbind-device     body: {"username":"","fingerprint":""}（fingerprint 空=清该玩家全部设备）
+#   POST /v1/admin/kick-online       body: {"reason":"可选","external_user_id":"网站主键"} 和/或 {"usernames":["a","b"]}（仅踢当前在线）
+#   POST /v1/skin/refresh            body: {"username":""} 或 {"uuid":""}
+#   POST /v1/link/external-user      body: {"username":"","external_user_id":"网站主键"}（空或省略 external_user_id 可解绑）
+#
+# 【HMAC 写入】require-hmac: true 时，客户端须发送：
+#   头 hmac-timestamp-header: Unix 秒级时间戳
+#   头 hmac-signature-header: hex(HMAC-SHA256(hmac-secret, 时间戳 + "\n" + 原始 JSON 请求体 UTF-8 字符串))
+#   与皮肤 webhook 相同算法族；时间戳与服务器相差超过 hmac-max-skew-seconds 则拒绝（防重放）。
+#
+# 【出站 Webhook】登录成功、改密、解绑设备、绑定网站账号、删号等见 outbound-webhooks（配置 URL 列表 + 事件名，无需改代码加 URL）。
+#
+# 【建议】对外只开放查询、写入仅内网：查询走反代，写入 allow-writes + 防火墙 IP 白名单。
+# ---------------------------------------------------------------------------
+http-api:
+  enabled: true
+  # 仅本机监听用 127.0.0.1；同机网站调用可用内网 IP
+  bind-address: "127.0.0.1"
+  port: 8090
+  api-key-header: "X-API-Key"
+  # 须与「重构/backend/.env」中 AUTHX_VLA_API_KEY 一致；上线请更换为生产密钥。
+  api-key: "${ENV:VLA_HTTP_API_KEY}"
+  expose-ban-check: true
+  # false（默认）：禁止所有 POST 管理与皮肤触发写入，降低密钥泄露风险。
+  # true：网站可 POST /v1/skin/refresh 等（仍须正确 api-key）。本地 http-api 仅 127.0.0.1 时风险可控。
+  allow-writes: false
+
+  # 反向代理层数：0 使用直连 IP；≥1 时使用 X-Forwarded-For 链中最左侧一段作为客户端 IP（限流、白名单、审计）。
+  trusted-proxy-hops: 0
+
+  # 敏感 GET（detail / profiles / security/events）限流；与 security.rate-limit.redis 共用同一 Redis 池逻辑（若启用 Redis）。
+  # max 为 0 表示关闭对应维度。
+  sensitive-get-rate-limit:
+    window-seconds: 60
+    max-per-ip: 120
+    max-per-api-key: 300
+
+  # POST 写入限流（管理/皮肤刷新等）：避免密钥泄露或刷接口导致滥用
+  sensitive-write-rate-limit:
+    window-seconds: 60
+    max-per-ip: 30
+    max-per-api-key: 200
+
+  # POST 写入额外安全（在 API Key 之外）：公网暴露时强烈建议至少配置其一。
+  write-security:
+    # 允许的来源 IP；空列表表示不限制。可写前缀并以 . 结尾，如 10.0.0. 匹配 10.0.0.x
+    ip-allowlist: []
+    require-hmac: false
+    hmac-secret: "${ENV:VLA_HTTP_HMAC_SECRET}"
+    hmac-max-skew-seconds: 300
+    hmac-timestamp-header: "X-VLA-Timestamp"
+    hmac-signature-header: "X-VLA-Signature"
+
+  # 出站事件（配置驱动，避免在代码里写死网站 URL）。签名：X-VLA-Signature = hex(HMAC-SHA256(secret, body))，与皮肤 webhook 一致。
+  outbound-webhooks:
+    # 本地联调：须与「重构/backend/.env」AUTHX_VLA_WEBHOOK_SECRET 一致；生产改 URL 与密钥。
+    enabled: true
+    timeout-millis: 5000
+    user-agent: "Velocity-Limbo-Auth-Webhook/1.0"
+    endpoints:
+      - url: "http://127.0.0.1:8787/api/plugin/authx/callback"
+        secret: "vla-webhook-local-secret-20260403"
+        events:
+          - skin_refreshed
+          - login_success
+    # 更多事件示例：
+    #       - password_changed
+    #       - device_unbound
+    #       - external_user_linked
+    #       - user_deleted
+    #       - security_alert
+    #       # 或使用 "*" 订阅全部
+
+# ---------------------------------------------------------------------------
+# Limbo 虚拟世界（LimboAPI）
+#
+# dimension：OVERWORLD | NETHER | THE_END
+# gamemode：ADVENTURE | SURVIVAL | CREATIVE | SPECTATOR
+# world-loader-type：VOID 为空世界；其他类型见 LimboAPI 文档（如 WORLDEDIT_SCHEM）。
+# ---------------------------------------------------------------------------
+limbo-world:
+  dimension: "OVERWORLD"
+  gamemode: "ADVENTURE"
+  position:
+    x: 0.5
+    y: 64.0
+    z: 0.5
+    yaw: 0.0
+    pitch: 0.0
+  world-loader-type: "VOID"
+  world-loader-file-name: "world.schematic"
+  world-loader-offset-x: 0
+  world-loader-offset-y: 0
+  world-loader-offset-z: 0
+
+# ---------------------------------------------------------------------------
+# 异步线程池
+#
+# 用于数据库、HTTP 客户端、邮件等阻塞操作；勿设为 0。
+# 建议略大于 database.pool-maximum-pool-size。
+# ---------------------------------------------------------------------------
+async:
+  worker-pool-size: 8
+
+# link（与网站协作的「备忘栏」，可选）；integrations 与 outbound-webhooks 合并投递，见源码 config.yml 长注释。
+link:
+  website-api-base: ""
+  shared-secret: "${ENV:VLA_LINK_SHARED_SECRET}"
+
+integrations:
+  merge-with-outbound: true
+  webhooks: []

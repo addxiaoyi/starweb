@@ -1,0 +1,20 @@
+# 片段：与仓库「重构/backend」联调时，合并进 velocity-limbo-auth 的 config.yml（或首次启动后由 jar 释放再编辑）。
+# velocity-test/plugins/starvelocity/config.yml 已按本仓库 .env 默认端口/密钥做过本地对齐；生产请改 URL 与密钥。
+# 将下方 URL、密钥替换为你的 PUBLIC_API_BASE_URL 与 AUTHX_VLA_WEBHOOK_SECRET。
+
+skin:
+  enabled: true
+  provider: "custom"
+  # 须与后端 GET /api/public/skin-profile/{username}.json 一致（{username}=进服名，且须在站点绑定 linkedMcUsername）
+  custom-profile-url: "http://127.0.0.1:8787/api/public/skin-profile/{username}.json"
+
+# 另在主 config 中设置：http-api.api-key = AUTHX_VLA_API_KEY；换皮即时刷新需 allow-writes: true。
+http-api:
+  outbound-webhooks:
+    enabled: true
+    endpoints:
+      - url: "http://127.0.0.1:8787/api/plugin/authx/callback"
+        secret: "replace-with-same-as-AUTHX_VLA_WEBHOOK_SECRET"
+        events:
+          - skin_refreshed
+          - login_success

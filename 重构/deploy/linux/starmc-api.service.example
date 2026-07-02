@@ -1,0 +1,33 @@
+# 本地单机部署示例（Linux，无容器）
+# 安装：
+#   sudo useradd -r -s /usr/sbin/nologin starmc || true
+#   sudo mkdir -p /etc/starmc /var/lib/starmc-api/data
+#   sudo chown -R starmc:starmc /var/lib/starmc-api
+#   sudo cp /srv/starmc-website/重构/deploy/linux/backend.env.production.example /etc/starmc/starmc-api.env
+#   sudo chmod 600 /etc/starmc/starmc-api.env
+#   # 可选：用一键脚本写入 SuperTokens 连接与 doctor 验收
+#   # sudo bash /srv/starmc-website/重构/deploy/linux/setup-backend-auth-closure.sh --core-uri http://127.0.0.1:3567
+#   sudo cp /srv/starmc-website/重构/deploy/linux/starmc-api.service.example /etc/systemd/system/starmc-api.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now starmc-api
+
+[Unit]
+Description=StarMC website API (Node, local single-host)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=starmc
+Group=starmc
+WorkingDirectory=/srv/starmc-website/重构/backend
+ExecStart=/usr/bin/node --env-file=/etc/starmc/starmc-api.env src/server.js
+Restart=on-failure
+RestartSec=5
+
+# 推荐安全项（需要时再打开）
+# NoNewPrivileges=true
+# PrivateTmp=true
+# ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

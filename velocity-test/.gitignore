@@ -1,0 +1,34 @@
+# Paper / Bukkit runtime
+.paper-runtime/
+logs/
+*.log
+
+# Server databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite-journal
+
+# Generated language files
+lang/
+
+# Downloaded plugins / jars
+plugins/*.jar
+plugins/*/
+!plugins/README.md
+
+# Velocity / Proxy runtime
+proxy/logs/
+proxy/plugins/*/
+proxy/velocity.toml.bak
+
+# Temporary / backup files
+*.tmp
+*.bak
+*.old
+runtime/
+backups/
+
+# Maven / Java build artifacts (if any)
+target/
+*.class

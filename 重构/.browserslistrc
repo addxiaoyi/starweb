@@ -1,0 +1,11 @@
+# 浏览器兼容性配置
+# 主要支持现代浏览器（Chrome 90+, Firefox 88+, Safari 14+, Edge 90+）
+# 国内主流浏览器覆盖 > 95%
+
+> 1%
+last 2 major versions
+not dead
+not ie 11
+
+# 中国地区特定支持（根据 caniuse-lite 数据）
+not and_uc 12

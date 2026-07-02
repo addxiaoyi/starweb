@@ -1,0 +1,31 @@
+# 生产环境示例：复制为 velocity.toml 前请按实际子服、域名与 Paper forwarding-secret 修改。
+# 认证插件 velocity-limbo-auth：jar 与代理版本对齐（默认 3.4+Java17 / 可选 profile velocity35 → 3.5+Java21），勿装独立 limboapi。
+# Auth plugin velocity-limbo-auth: match jar to proxy (default 3.4+J17 / profile velocity35 → 3.5+J21); no standalone limboapi.
+# Paper 子服：paper-global.yml 中 velocity.enabled + velocity.secret 与本代理 forwarding.secret 一致。
+# Paper backends: velocity.enabled + velocity.secret must match this proxy's forwarding.secret (see Paper docs).
+# 文档：https://docs.papermc.io/velocity/security/
+
+config-version = "2.7"
+bind = "0.0.0.0:25565"
+motd = "&aYour Network"
+show-max-players = 500
+online-mode = false
+force-key-authentication = false
+prevent-client-proxy-connections = true
+player-info-forwarding-mode = "modern"
+
+[servers]
+lobby = "10.0.0.10:25566"
+factions = "10.0.0.11:25566"
+minigames = "10.0.0.12:25566"
+
+# 首次连接顺序（均不可达时按 Velocity 默认行为）
+try = ["lobby"]
+
+# 按连接域名分流到不同默认服（键为小写主机名）
+# [forced-hosts]
+# "mc.example.com" = ["lobby"]
+# "factions.example.com" = ["factions"]
+
+[query]
+enabled = false

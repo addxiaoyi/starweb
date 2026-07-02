@@ -1,0 +1,30 @@
+# 插件 velocity-limbo-auth：默认 jar = Velocity 3.4.x + Java 17；mvn -Pvelocity35 = 3.5.x + Java 21。
+# Plugin: default build targets Velocity 3.4.x + Java 17; use Maven -Pvelocity35 for 3.5.x + Java 21.
+# 仅需本插件（内嵌 LimboAPI），勿再装独立 limboapi。
+# Only this plugin (embedded LimboAPI); do not install a separate limboapi plugin.
+# 本地联调 forwarding 可用 NONE。生产 Paper 子服需 modern + forwarding.secret，见 velocity.prod.example.toml。
+# Dev: forwarding NONE is OK. Production Paper backends: modern + forwarding.secret — see velocity.prod.example.toml.
+config-version = "2.7"
+bind = "0.0.0.0:25579"
+motd = "Velocity Server"
+show-max-players = 500
+online-mode = false
+force-key-authentication = false
+prevent-client-proxy-connections = false
+player-info-forwarding-mode = "NONE"
+
+[servers]
+lobby = "127.0.0.1:30066"
+factions = "127.0.0.1:30067"
+minigames = "127.0.0.1:30068"
+
+try = ["lobby"]
+
+[forced-hosts]
+"lobby.local" = ["lobby"]
+"factions.local" = ["factions"]
+"minigames.local" = ["minigames"]
+
+[query]
+enabled = false
+
