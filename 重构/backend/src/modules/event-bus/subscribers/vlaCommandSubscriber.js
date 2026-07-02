@@ -9,6 +9,7 @@ const POST_COMMANDS = [
   [Events.VLA_COMMAND_RESET_PASSWORD, '/api/plugin/authx/admin/reset-password'],
   [Events.VLA_COMMAND_BIND_EMAIL, '/api/plugin/authx/admin/bind-email'],
   [Events.VLA_COMMAND_UNBIND_DEVICE, '/api/plugin/authx/admin/unbind-device'],
+  // NOTIFY_BIND_EMAIL 与 BIND_EMAIL 共用同一个 admin 端点，区别由 body.action 或调用方语义决定
   [Events.VLA_COMMAND_NOTIFY_BIND_EMAIL, '/api/plugin/authx/admin/bind-email'],
 ]
 
@@ -28,6 +29,9 @@ export function registerVlaCommandSubscriber(bus, deps) {
 
       try {
         const result = await pluginFetchJson(path, body || {})
+        if (result.status >= 400) {
+          throw new Error(result.json?.message || `VLA admin returned ${result.status}`)
+        }
 
         if (_replyTo) {
           bus.publish(`vla:command:reply:${_replyTo}`, { ok: true, result })
@@ -48,6 +52,7 @@ export function registerVlaCommandSubscriber(bus, deps) {
         }
         bus.publish(Events.VLA_COMMAND_FAILED, {
           command: event,
+          ok: false,
           error: error.message,
         })
       }

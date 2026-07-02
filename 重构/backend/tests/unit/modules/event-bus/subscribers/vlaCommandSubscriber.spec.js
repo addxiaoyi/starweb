@@ -3,17 +3,18 @@ import { describe, it, beforeEach } from 'node:test'
 import { EventBus, Events } from '../../../../../src/modules/event-bus/index.js'
 import { registerVlaCommandSubscriber } from '../../../../../src/modules/event-bus/subscribers/vlaCommandSubscriber.js'
 
-const POST_COMMANDS = [
+const SAMPLE_COMMANDS = [
   [Events.VLA_COMMAND_KICK_ONLINE, '/api/plugin/authx/admin/kick-online'],
   [Events.VLA_COMMAND_BAN, '/api/plugin/authx/admin/ban'],
-  [Events.VLA_COMMAND_DELETE_USER, '/api/plugin/authx/admin/delete-user'],
-  [Events.VLA_COMMAND_SKIN_REFRESH, '/api/plugin/authx/admin/skin-refresh'],
-  [Events.VLA_COMMAND_LINK_EXTERNAL_USER, '/api/plugin/authx/admin/link-external-user'],
-  [Events.VLA_COMMAND_RESET_PASSWORD, '/api/plugin/authx/admin/reset-password'],
-  [Events.VLA_COMMAND_BIND_EMAIL, '/api/plugin/authx/admin/bind-email'],
-  [Events.VLA_COMMAND_UNBIND_DEVICE, '/api/plugin/authx/admin/unbind-device'],
+  // NOTIFY_BIND_EMAIL 与 BIND_EMAIL 共用同一个 admin 端点
   [Events.VLA_COMMAND_NOTIFY_BIND_EMAIL, '/api/plugin/authx/admin/bind-email'],
 ]
+
+function waitForEvent(bus, eventName) {
+  return new Promise((resolve) => {
+    bus.once(eventName, resolve)
+  })
+}
 
 describe('vlaCommandSubscriber', () => {
   let bus
@@ -21,7 +22,6 @@ describe('vlaCommandSubscriber', () => {
   let logs
   let logger
   let pluginFetchJson
-  let pluginFetchGet
 
   beforeEach(() => {
     logs = { errors: [] }
@@ -34,24 +34,17 @@ describe('vlaCommandSubscriber', () => {
       calls.push({ path, body })
       return { status: 200, json: { ok: true } }
     }
-    pluginFetchGet = async () => ({ status: 200, json: {} })
-    registerVlaCommandSubscriber(bus, { pluginFetchJson, pluginFetchGet, logger })
+    registerVlaCommandSubscriber(bus, { pluginFetchJson, logger })
   })
 
-  it('calls pluginFetchJson for each POST command and replies with ok:true', async () => {
-    for (const [event, path] of POST_COMMANDS) {
+  it('calls pluginFetchJson for each sample command and replies with ok:true', async () => {
+    for (const [event, path] of SAMPLE_COMMANDS) {
       const requestId = `req-${event}`
-      let reply
-      bus.once(`vla:command:reply:${requestId}`, (payload) => {
-        reply = payload
-      })
-      let completed
-      bus.once(Events.VLA_COMMAND_COMPLETED, (payload) => {
-        completed = payload
-      })
+      const replyPromise = waitForEvent(bus, `vla:command:reply:${requestId}`)
+      const completedPromise = waitForEvent(bus, Events.VLA_COMMAND_COMPLETED)
 
       bus.publish(event, { body: { foo: event }, _replyTo: requestId })
-      await new Promise((resolve) => setTimeout(resolve, 10))
+      const [reply, completed] = await Promise.all([replyPromise, completedPromise])
 
       assert.strictEqual(calls.length, 1)
       assert.strictEqual(calls[0].path, path)
@@ -70,29 +63,57 @@ describe('vlaCommandSubscriber', () => {
     }
   })
 
+  it('passes an empty object when body is undefined', async () => {
+    const requestId = 'no-body-reply'
+    const replyPromise = waitForEvent(bus, `vla:command:reply:${requestId}`)
+
+    bus.publish(Events.VLA_COMMAND_SKIN_REFRESH, { _replyTo: requestId })
+    await replyPromise
+
+    assert.strictEqual(calls.length, 1)
+    assert.deepStrictEqual(calls[0].body, {})
+  })
+
+  it('publishes VLA_COMMAND_FAILED and replies ok:false when pluginFetchJson returns 4xx', async () => {
+    pluginFetchJson = async () => ({ status: 400, json: { message: 'bad request' } })
+    const failingBus = new EventBus(logger)
+    registerVlaCommandSubscriber(failingBus, { pluginFetchJson, logger })
+
+    const requestId = 'err-reply'
+    const replyPromise = waitForEvent(failingBus, `vla:command:reply:${requestId}`)
+    const failedPromise = waitForEvent(failingBus, Events.VLA_COMMAND_FAILED)
+
+    failingBus.publish(Events.VLA_COMMAND_BAN, { body: { username: 'x' }, _replyTo: requestId })
+    const [reply, failed] = await Promise.all([replyPromise, failedPromise])
+
+    assert.deepStrictEqual(reply, { ok: false, error: 'bad request' })
+    assert.deepStrictEqual(failed, {
+      command: Events.VLA_COMMAND_BAN,
+      ok: false,
+      error: 'bad request'
+    })
+    assert.strictEqual(logs.errors.length, 1)
+    assert.ok(logs.errors[0][0].includes('bad request'))
+  })
+
   it('publishes VLA_COMMAND_FAILED and replies ok:false when pluginFetchJson throws', async () => {
     pluginFetchJson = async () => {
       throw new Error('network down')
     }
     const failingBus = new EventBus(logger)
-    registerVlaCommandSubscriber(failingBus, { pluginFetchJson, pluginFetchGet, logger })
+    registerVlaCommandSubscriber(failingBus, { pluginFetchJson, logger })
 
-    const requestId = 'err-reply'
-    let reply
-    failingBus.once(`vla:command:reply:${requestId}`, (payload) => {
-      reply = payload
-    })
-    let failed
-    failingBus.once(Events.VLA_COMMAND_FAILED, (payload) => {
-      failed = payload
-    })
+    const requestId = 'throw-reply'
+    const replyPromise = waitForEvent(failingBus, `vla:command:reply:${requestId}`)
+    const failedPromise = waitForEvent(failingBus, Events.VLA_COMMAND_FAILED)
 
     failingBus.publish(Events.VLA_COMMAND_BAN, { body: { username: 'x' }, _replyTo: requestId })
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    const [reply, failed] = await Promise.all([replyPromise, failedPromise])
 
     assert.deepStrictEqual(reply, { ok: false, error: 'network down' })
     assert.deepStrictEqual(failed, {
       command: Events.VLA_COMMAND_BAN,
+      ok: false,
       error: 'network down'
     })
     assert.strictEqual(logs.errors.length, 1)
@@ -100,13 +121,10 @@ describe('vlaCommandSubscriber', () => {
   })
 
   it('publishes VLA_COMMAND_COMPLETED when there is no _replyTo', async () => {
-    let completed
-    bus.once(Events.VLA_COMMAND_COMPLETED, (payload) => {
-      completed = payload
-    })
+    const completedPromise = waitForEvent(bus, Events.VLA_COMMAND_COMPLETED)
 
     bus.publish(Events.VLA_COMMAND_SKIN_REFRESH, { body: { name: 'steve' } })
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    const completed = await completedPromise
 
     assert.deepStrictEqual(completed, {
       command: Events.VLA_COMMAND_SKIN_REFRESH,
