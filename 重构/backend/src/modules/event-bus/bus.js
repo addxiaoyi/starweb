@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
+import { Events } from './events.js'
 
 export class EventBus {
   constructor(logger = console) {
@@ -13,10 +14,11 @@ export class EventBus {
         await handler(payload)
       } catch (error) {
         this.logger.error(`event-bus: handler for ${event} failed: ${error.message}`, error)
-        this.emitter.emit('event:handler:failed', { event, error, payload })
+        this.emitter.emit(Events.EVENT_HANDLER_FAILED, { event, error, payload })
       }
     }
     this.emitter.on(event, wrapped)
+    return () => this.emitter.off(event, wrapped)
   }
 
   publish(event, payload) {
@@ -29,10 +31,11 @@ export class EventBus {
         await handler(payload)
       } catch (error) {
         this.logger.error(`event-bus: handler for ${event} failed: ${error.message}`, error)
-        this.emitter.emit('event:handler:failed', { event, error, payload })
+        this.emitter.emit(Events.EVENT_HANDLER_FAILED, { event, error, payload })
       }
     }
     this.emitter.once(event, wrapped)
+    return () => this.emitter.off(event, wrapped)
   }
 
   publishAndWait(event, payload, { timeoutMs = 15000 } = {}) {
@@ -51,7 +54,13 @@ export class EventBus {
       }
 
       this.emitter.once(replyEvent, onReply)
-      this.publish(event, { ...payload, _replyTo: requestId })
+      try {
+        this.publish(event, { ...payload, _replyTo: requestId })
+      } catch (err) {
+        clearTimeout(timer)
+        this.emitter.off(replyEvent, onReply)
+        reject(err)
+      }
     })
   }
 }

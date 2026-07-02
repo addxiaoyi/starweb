@@ -66,6 +66,14 @@ describe('event-bus', () => {
       await new Promise((resolve) => setTimeout(resolve, 10))
       assert.deepStrictEqual(received, [{ userId: 5 }])
     })
+
+    it('returns an unsubscribe function that removes the listener', () => {
+      const received = []
+      const unsubscribe = bus.subscribe(Events.AUTH_LOGIN_SUCCESS, (payload) => received.push(payload))
+      unsubscribe()
+      bus.publish(Events.AUTH_LOGIN_SUCCESS, { userId: 10 })
+      assert.deepStrictEqual(received, [])
+    })
   })
 
   describe('once', () => {
@@ -75,6 +83,20 @@ describe('event-bus', () => {
       bus.publish(Events.AUTH_LOGIN_SUCCESS, { userId: 6 })
       bus.publish(Events.AUTH_LOGIN_SUCCESS, { userId: 7 })
       assert.deepStrictEqual(received, [{ userId: 6 }])
+    })
+
+    it('logs error and emits failure event only once when handler throws', () => {
+      const failures = []
+      bus.subscribe(Events.EVENT_HANDLER_FAILED, (payload) => failures.push(payload))
+      bus.once(Events.AUTH_LOGIN_SUCCESS, () => {
+        throw new Error('once failure')
+      })
+      bus.publish(Events.AUTH_LOGIN_SUCCESS, { userId: 11 })
+      bus.publish(Events.AUTH_LOGIN_SUCCESS, { userId: 12 })
+      assert.strictEqual(logs.errors.length, 1)
+      assert.ok(logs.errors[0][0].includes('once failure'))
+      assert.strictEqual(failures.length, 1)
+      assert.strictEqual(failures[0].event, Events.AUTH_LOGIN_SUCCESS)
     })
   })
 
@@ -110,6 +132,20 @@ describe('event-bus', () => {
       assert.strictEqual(typeof captured._replyTo, 'string')
       assert.strictEqual(captured._replyTo.length > 0, true)
       assert.strictEqual(captured.playerId, 'p3')
+    })
+
+    it('cleans up the reply listener after timeout', async () => {
+      await assert.rejects(
+        async () => bus.publishAndWait(Events.VLA_COMMAND_BAN, { playerId: 'p4' }, { timeoutMs: 50 }),
+        (err) => {
+          assert.ok(err instanceof Error)
+          return true
+        }
+      )
+      const replyEventNames = bus.emitter.eventNames().filter((name) =>
+        String(name).startsWith('vla:command:reply:')
+      )
+      assert.strictEqual(replyEventNames.length, 0)
     })
   })
 })
