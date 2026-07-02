@@ -211,12 +211,15 @@ describe('authSubscriber', () => {
     })
     assert.strictEqual(store.users[0].linkedMcUuid, 'mojang-uuid-123')
     assert.deepStrictEqual(calls.markUserProfileDirty, ['user-1'])
-    assert.deepStrictEqual(event, {
-      userId: 'user-1',
+    assert.strictEqual(event.store, store)
+    assert.strictEqual(event.userId, 'user-1')
+    assert.deepStrictEqual(event.auditDetail, {
       mcUsername: 'steve',
       mojangUuid: 'mojang-uuid-123',
-      sessionId: 'session-ok',
       source: 'plugin_callback',
+      sessionId: 'session-ok',
+      retryCount: 0,
+      maxRetries: 3,
     })
   })
 
@@ -233,10 +236,11 @@ describe('authSubscriber', () => {
 
     assert.strictEqual(calls.failMcVerifySession.length, 1)
     assert.strictEqual(calls.failMcVerifySession[0].detail.conflictCode, 'callback_missing_mojang_uuid')
+    assert.strictEqual(event.store, store)
     assert.strictEqual(event.userId, 'user-1')
-    assert.strictEqual(event.mcUsername, 'steve')
-    assert.strictEqual(event.reason, 'missing_mojang_uuid')
-    assert.strictEqual(event.conflictCode, 'callback_missing_mojang_uuid')
+    assert.strictEqual(event.auditDetail.mcUsername, 'steve')
+    assert.strictEqual(event.auditDetail.reason, 'missing_mojang_uuid')
+    assert.strictEqual(event.auditDetail.conflictCode, 'callback_missing_mojang_uuid')
   })
 
   it('verify_failed calls failMcVerifySession and publishes AUTH_VERIFY_FAILED', async () => {
@@ -256,9 +260,10 @@ describe('authSubscriber', () => {
       reason: 'premium_expired',
       detail: { mcUsername: 'steve', conflictCode: 'plugin_verify_failed' },
     })
+    assert.strictEqual(event.store, store)
     assert.strictEqual(event.userId, 'user-1')
-    assert.strictEqual(event.mcUsername, 'steve')
-    assert.strictEqual(event.reason, 'premium_expired')
+    assert.strictEqual(event.auditDetail.mcUsername, 'steve')
+    assert.strictEqual(event.auditDetail.reason, 'premium_expired')
   })
 
   it('verify_premium_failed is handled like verify_failed', async () => {
@@ -274,8 +279,8 @@ describe('authSubscriber', () => {
 
     assert.strictEqual(calls.failMcVerifySession.length, 1)
     assert.strictEqual(calls.failMcVerifySession[0].reason, 'server_error')
-    assert.strictEqual(event.mcUsername, 'steve')
-    assert.strictEqual(event.reason, 'server_error')
+    assert.strictEqual(event.auditDetail.mcUsername, 'steve')
+    assert.strictEqual(event.auditDetail.reason, 'server_error')
   })
 
   it('login_success calls appendLoginEvent and publishes AUTH_LOGIN_SUCCESS', async () => {
@@ -300,13 +305,21 @@ describe('authSubscriber', () => {
       ip: '8.8.8.8',
     })
     assert.strictEqual(calls.appendSecurityAudit.filter((x) => x.action === 'login_success').length, 1)
-    assert.deepStrictEqual(event, {
+    assert.strictEqual(event.store, store)
+    assert.deepStrictEqual(event.loginRow, {
       userId: 'user-1',
       username: 'Steve',
+      uuid: 'uuid',
       method: 'microsoft',
       ip: '8.8.8.8',
-      source: 'plugin_callback',
+      location: 'CN',
+      asn: 'ASN',
+      riskScore: 0,
+      riskLevel: 'low',
+      deviceProfile: 'trusted_device',
+      externalUserId: 'user-1',
     })
+    assert.strictEqual(event.source, 'plugin_callback')
   })
 
   it('security_alert appends alert and publishes SECURITY_ALERT_RAISED', async () => {
@@ -331,14 +344,13 @@ describe('authSubscriber', () => {
 
     assert.strictEqual(calls.appendSecurityAlert.length, 1)
     assert.strictEqual(calls.appendSecurityAlert[0].userId, 'user-1')
-    assert.strictEqual(event.userId, 'user-1')
-    assert.strictEqual(event.level, 'low')
-    assert.strictEqual(event.title, '登录安全告警：impossible_travel')
-    assert.strictEqual(event.payload.username, 'Steve')
-    assert.strictEqual(event.payload.type, 'impossible_travel')
-    assert.strictEqual(event.payload.riskScore, 85)
-    assert.strictEqual(event.payload.riskLevel, 'high')
-    assert.strictEqual(event.payload.deviceProfile, 'new_device')
+    assert.strictEqual(event.store, store)
+    assert.strictEqual(event.targetUserId, 'user-1')
+    assert.strictEqual(event.alertPayload.username, 'Steve')
+    assert.strictEqual(event.alertPayload.type, 'impossible_travel')
+    assert.strictEqual(event.alertPayload.riskScore, 85)
+    assert.strictEqual(event.alertPayload.riskLevel, 'high')
+    assert.strictEqual(event.alertPayload.deviceProfile, 'new_device')
   })
 
   it('does not break other subscribers when one handler throws', async () => {

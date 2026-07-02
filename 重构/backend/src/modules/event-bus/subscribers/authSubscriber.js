@@ -90,11 +90,9 @@ export function registerAuthSubscriber(bus, deps) {
           }
           appendSecurityAudit(store, u.id, 'verify_failed', auditDetail)
           bus.publish(Events.AUTH_VERIFY_FAILED, {
+            store,
             userId: u.id,
-            mcUsername,
-            reason: auditDetail.reason,
-            conflictCode: auditDetail.conflictCode,
-            source: 'plugin_callback',
+            auditDetail,
           })
         }
       } else if (mcUsername) {
@@ -131,26 +129,23 @@ export function registerAuthSubscriber(bus, deps) {
             scheduleSave()
             console.info(`[starmc-api] 正版验证完成：${mcUsername} (uuid=${mojangUuid})，用户=${u.id}`)
             bus.publish(Events.AUTH_VERIFY_COMPLETED, {
+              store,
               userId: u.id,
-              mcUsername,
-              mojangUuid,
-              sessionId: completeResult.session?.id || null,
-              source: 'plugin_callback',
+              auditDetail,
             })
           } else {
             const auditDetail = {
               mcUsername,
               source: 'plugin_callback',
+              reason: 'verify_callback_conflict',
               conflictCode: completeResult?.code || 'unknown',
               event: 'verify_premium',
             }
             appendSecurityAudit(store, u.id, 'verify_callback_conflict', auditDetail)
             bus.publish(Events.AUTH_VERIFY_FAILED, {
+              store,
               userId: u.id,
-              mcUsername,
-              reason: 'verify_callback_conflict',
-              conflictCode: auditDetail.conflictCode,
-              source: 'plugin_callback',
+              auditDetail,
             })
           }
         }
@@ -193,27 +188,23 @@ export function registerAuthSubscriber(bus, deps) {
             }
             pushUserNotification(store, u.id, notificationPayload)
             bus.publish(Events.AUTH_VERIFY_FAILED, {
+              store,
               userId: u.id,
-              mcUsername,
-              reason: reason || 'verify_failed',
-              conflictCode: auditDetail.conflictCode,
-              source: 'plugin_callback',
+              auditDetail,
             })
           } else {
             const auditDetail = {
               mcUsername,
-              reason: reason || 'verify_failed',
+              reason: 'verify_callback_conflict',
               source: 'plugin_callback',
               conflictCode: failResult?.code || 'unknown',
               event: 'verify_failed',
             }
             appendSecurityAudit(store, u.id, 'verify_callback_conflict', auditDetail)
             bus.publish(Events.AUTH_VERIFY_FAILED, {
+              store,
               userId: u.id,
-              mcUsername,
-              reason: 'verify_callback_conflict',
-              conflictCode: auditDetail.conflictCode,
-              source: 'plugin_callback',
+              auditDetail,
             })
           }
         }
@@ -238,10 +229,8 @@ export function registerAuthSubscriber(bus, deps) {
       }
       appendSecurityAudit(store, loginRow.userId, 'login_success', auditDetail)
       bus.publish(Events.AUTH_LOGIN_SUCCESS, {
-        userId: loginRow.userId,
-        username: loginRow.username,
-        method: loginRow.method,
-        ip: loginRow.ip,
+        store,
+        loginRow,
         source: 'plugin_callback',
       })
     }
@@ -277,10 +266,9 @@ export function registerAuthSubscriber(bus, deps) {
       }
       appendSecurityAlert(store, targetUserId, computed.riskLevel, `登录安全告警：${String(body.type || 'unknown')}`, alertPayload)
       bus.publish(Events.SECURITY_ALERT_RAISED, {
-        userId: targetUserId,
-        level: computed.riskLevel,
-        title: `登录安全告警：${String(body.type || 'unknown')}`,
-        payload: alertPayload,
+        store,
+        targetUserId,
+        alertPayload,
       })
     }
   })
