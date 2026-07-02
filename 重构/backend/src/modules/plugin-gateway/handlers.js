@@ -2,11 +2,16 @@ import { asyncHandler } from '../../middleware/error.js'
 import {
   detectInboundAdapter,
   isPluginWebhookAuthConfigured,
+  parsePluginPayload,
   verifyPluginInboundWebhook,
 } from './adapter.js'
 import { Events } from '../event-bus/events.js'
 
-function setDeprecationHeaders(res, req) {
+/**
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ */
+function setDeprecationHeaders(req, res) {
   const baseUrl = req.baseUrl || ''
   if (baseUrl === '/api/plugin/authx') {
     res.setHeader('Sunset', 'Thu, 31 Dec 2026 00:00:00 GMT')
@@ -14,46 +19,72 @@ function setDeprecationHeaders(res, req) {
   }
 }
 
+/**
+ * @param {import('express').Request} req
+ * @returns {string}
+ */
 function readRawPayload(req) {
   if (Buffer.isBuffer(req.body)) return req.body.toString('utf8')
-  return String(req.body ?? '')
+  if (typeof req.body === 'string') return req.body
+  return ''
 }
 
-export function createPluginGatewayHandlers(deps) {
-  const { config, jsonErr, getStore, eventBus, authxWebhookCallbackLimiter: _authxWebhookCallbackLimiter } = deps
+/**
+ * 校验并解析插件 webhook 请求。
+ *
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {object} deps
+ * @param {object} deps.config
+ * @param {Function} deps.jsonErr
+ * @returns {{ ok: true, body: object, rawPayload: string } | { ok: false }}
+ */
+function verifyAndParsePluginWebhook(req, res, deps) {
+  const { config, jsonErr } = deps
+  setDeprecationHeaders(req, res)
 
-  function checkMisconfigured(res) {
-    if (config.isProd && !isPluginWebhookAuthConfigured()) {
-      return jsonErr(
-        res,
-        503,
-        '生产环境必须配置 AUTHX_VLA_WEBHOOK_SECRET(S) 或 AUTHX_CALLBACK_SECRET 后方可接收插件回调',
-        'misconfigured'
-      )
-    }
-    return null
+  if (config.isProd && !isPluginWebhookAuthConfigured(config)) {
+    jsonErr(res, 503, '生产环境未配置 webhook 认证密钥', 'misconfigured')
+    return { ok: false }
   }
 
+  const rawPayload = readRawPayload(req)
+  if (!verifyPluginInboundWebhook(req, rawPayload, config)) {
+    jsonErr(res, 401, '未授权或签名校验失败', 'unauthorized')
+    return { ok: false }
+  }
+
+  let body = {}
+  if (rawPayload.trim()) {
+    const parsed = parsePluginPayload(rawPayload)
+    if (!parsed.ok) {
+      jsonErr(res, 400, 'JSON 无效', 'validation_error')
+      return { ok: false }
+    }
+    body = parsed.body
+  }
+
+  return { ok: true, body, rawPayload }
+}
+
+/**
+ * 创建插件网关请求处理器。
+ *
+ * @param {object} deps
+ * @param {object} deps.config
+ * @param {Function} deps.jsonErr
+ * @param {Function} deps.getStore
+ * @param {object} deps.eventBus
+ * @returns {{ callback: Function, bindEmail: Function }}
+ */
+export function createPluginGatewayHandlers(deps) {
+  const { config, jsonErr, getStore, eventBus } = deps
+
   const callback = asyncHandler(async (req, res) => {
-    setDeprecationHeaders(res, req)
+    const result = verifyAndParsePluginWebhook(req, res, { config, jsonErr })
+    if (!result.ok) return result
 
-    const misconfigured = checkMisconfigured(res)
-    if (misconfigured) return misconfigured
-
-    const rawPayload = readRawPayload(req)
-    if (!verifyPluginInboundWebhook(req, rawPayload)) {
-      return jsonErr(res, 401, '未授权或签名校验失败', 'unauthorized')
-    }
-
-    let body = {}
-    if (rawPayload.trim()) {
-      try {
-        body = JSON.parse(rawPayload)
-      } catch {
-        return jsonErr(res, 400, 'JSON 无效', 'validation_error')
-      }
-    }
-
+    const { body } = result
     const event = String(body.event || '').trim()
     if (!event) {
       return jsonErr(res, 400, '缺少 event', 'validation_error')
@@ -63,7 +94,7 @@ export function createPluginGatewayHandlers(deps) {
       store: getStore(),
       body,
       meta: {
-        vlaInbound: detectInboundAdapter(req) === 'vla',
+        vlaInbound: detectInboundAdapter(req, config) === 'vla',
         remoteAddress: String(
           req.headers['x-forwarded-for'] || req.socket?.remoteAddress || ''
         ).trim(),
@@ -75,24 +106,10 @@ export function createPluginGatewayHandlers(deps) {
   })
 
   const bindEmail = asyncHandler(async (req, res) => {
-    setDeprecationHeaders(res, req)
+    const result = verifyAndParsePluginWebhook(req, res, { config, jsonErr })
+    if (!result.ok) return result
 
-    const misconfigured = checkMisconfigured(res)
-    if (misconfigured) return misconfigured
-
-    const rawPayload = readRawPayload(req)
-    if (!verifyPluginInboundWebhook(req, rawPayload)) {
-      return jsonErr(res, 401, '未授权或签名校验失败', 'unauthorized')
-    }
-
-    let body = {}
-    if (rawPayload.trim()) {
-      try {
-        body = JSON.parse(rawPayload)
-      } catch {
-        return jsonErr(res, 400, 'JSON 无效', 'validation_error')
-      }
-    }
+    const { body } = result
 
     eventBus.publish(Events.PLUGIN_BIND_EMAIL_RECEIVED, {
       store: getStore(),

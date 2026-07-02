@@ -194,24 +194,19 @@ describe('plugin-gateway adapter', () => {
 
   describe('parsePluginPayload', () => {
     it('parses a valid JSON object', () => {
-      assert.deepStrictEqual(parsePluginPayload('{"event":"login"}'), { event: 'login' })
+      assert.deepStrictEqual(parsePluginPayload('{"event":"login"}'), { ok: true, body: { event: 'login' } })
     })
 
-    it('returns an empty object for an empty string', () => {
-      assert.deepStrictEqual(parsePluginPayload(''), {})
+    it('returns ok false for an empty string', () => {
+      assert.deepStrictEqual(parsePluginPayload(''), { ok: false })
     })
 
-    it('returns an empty object for a whitespace-only string', () => {
-      assert.deepStrictEqual(parsePluginPayload('   \n\t  '), {})
+    it('returns ok false for a whitespace-only string', () => {
+      assert.deepStrictEqual(parsePluginPayload('   \n\t  '), { ok: false })
     })
 
-    it('returns an empty object for null or undefined', () => {
-      assert.deepStrictEqual(parsePluginPayload(null), {})
-      assert.deepStrictEqual(parsePluginPayload(undefined), {})
-    })
-
-    it('throws when payload is invalid JSON', () => {
-      assert.throws(() => parsePluginPayload('{not json}'), SyntaxError)
+    it('returns ok false for invalid JSON', () => {
+      assert.deepStrictEqual(parsePluginPayload('{not json}'), { ok: false })
     })
   })
 })

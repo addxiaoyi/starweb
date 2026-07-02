@@ -38,6 +38,13 @@ function signVlaPayload(payload, secret) {
   return crypto.createHmac('sha256', secret).update(payload, 'utf8').digest('hex')
 }
 
+function signAuthxPayload(payload, secret) {
+  const tsSec = String(Math.floor(Date.now() / 1000))
+  const data = `${tsSec}.${payload}`
+  const signature = crypto.createHmac('sha256', secret).update(data, 'utf8').digest('base64url')
+  return { tsSec, signature }
+}
+
 function createMockEventBus() {
   const published = []
   return {
@@ -51,11 +58,14 @@ function createMockEventBus() {
 function createDeps(overrides = {}) {
   const eventBus = createMockEventBus()
   return {
-    config: { isProd: config.isProd },
+    config: {
+      isProd: config.isProd,
+      authxVlaWebhookSecrets: config.authxVlaWebhookSecrets,
+      authxCallbackSecret: config.authxCallbackSecret,
+    },
     jsonErr: createMockJsonErr(),
     getStore: () => ({ users: [], authxEvents: [] }),
     eventBus,
-    authxWebhookCallbackLimiter: () => {},
     ...overrides,
   }
 }
@@ -149,6 +159,68 @@ describe('plugin-gateway handlers', () => {
       assert.strictEqual(published.payload.meta.vlaInbound, true)
       assert.strictEqual(published.payload.meta.remoteAddress, '10.0.0.1')
       assert.ok(typeof published.payload.meta.receivedAt === 'string')
+    })
+
+    it('publishes PLUGIN_CALLBACK_RECEIVED with vlaInbound false for authx adapter', async () => {
+      config.authxVlaWebhookSecrets = []
+      config.authxCallbackSecret = 'authx-callback-secret'
+      const deps = createDeps()
+      const handlers = createPluginGatewayHandlers(deps)
+      const res = createMockRes()
+      const body = '{"event":"login_success","username":"Steve"}'
+      const { tsSec, signature } = signAuthxPayload(body, 'authx-callback-secret')
+      await handlers.callback(
+        {
+          headers: {
+            'x-authx-signature': signature,
+            'x-authx-timestamp': tsSec,
+          },
+          body,
+        },
+        res
+      )
+      assert.strictEqual(res.statusCode, 200)
+      assert.deepStrictEqual(res.jsonBody, { ok: true })
+      assert.strictEqual(deps.eventBus.published.length, 1)
+      const published = deps.eventBus.published[0]
+      assert.strictEqual(published.event, Events.PLUGIN_CALLBACK_RECEIVED)
+      assert.strictEqual(published.payload.meta.vlaInbound, false)
+    })
+
+    it('falls back remoteAddress to req.socket.remoteAddress', async () => {
+      const deps = createDeps()
+      const handlers = createPluginGatewayHandlers(deps)
+      const res = createMockRes()
+      const body = '{"event":"login_success","username":"Steve"}'
+      const signature = signVlaPayload(body, 'vla-webhook-secret')
+      await handlers.callback(
+        {
+          headers: { 'x-vla-signature': signature },
+          body,
+          socket: { remoteAddress: '192.168.1.1' },
+        },
+        res
+      )
+      assert.strictEqual(res.statusCode, 200)
+      assert.strictEqual(deps.eventBus.published[0].payload.meta.remoteAddress, '192.168.1.1')
+    })
+
+    it('accepts a Buffer body', async () => {
+      const deps = createDeps()
+      const handlers = createPluginGatewayHandlers(deps)
+      const res = createMockRes()
+      const body = '{"event":"login_success","username":"Steve"}'
+      const signature = signVlaPayload(body, 'vla-webhook-secret')
+      await handlers.callback(
+        {
+          headers: { 'x-vla-signature': signature },
+          body: Buffer.from(body, 'utf8'),
+        },
+        res
+      )
+      assert.strictEqual(res.statusCode, 200)
+      assert.deepStrictEqual(res.jsonBody, { ok: true })
+      assert.deepStrictEqual(deps.eventBus.published[0].payload.body, { event: 'login_success', username: 'Steve' })
     })
 
     it('sets Sunset and Deprecation headers for legacy /api/plugin/authx/callback success', async () => {
@@ -296,6 +368,29 @@ describe('plugin-gateway handlers', () => {
       assert.strictEqual(res.statusCode, 401)
       assert.strictEqual(res.headers['Sunset'], 'Thu, 31 Dec 2026 00:00:00 GMT')
       assert.strictEqual(res.headers['Deprecation'], 'true')
+    })
+
+    it('does not set Sunset or Deprecation headers for /api/v1/plugin/bind-email', async () => {
+      const handlers = createPluginGatewayHandlers(createDeps())
+      const res = createMockRes()
+      const body = JSON.stringify({
+        email: 'test@example.com',
+        username: 'Steve',
+        external_user_id: 'ext-1',
+        uuid: 'uuid-1',
+      })
+      const signature = signVlaPayload(body, 'vla-webhook-secret')
+      await handlers.bindEmail(
+        {
+          baseUrl: '/api/v1/plugin',
+          headers: { 'x-vla-signature': signature },
+          body,
+        },
+        res
+      )
+      assert.strictEqual(res.statusCode, 200)
+      assert.strictEqual(res.headers['Sunset'], undefined)
+      assert.strictEqual(res.headers['Deprecation'], undefined)
     })
   })
 })
