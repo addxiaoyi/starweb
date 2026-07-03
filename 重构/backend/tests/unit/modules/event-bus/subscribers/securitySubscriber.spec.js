@@ -275,10 +275,111 @@ describe('securitySubscriber', () => {
       detail: {
         email: 'test@example.com',
         mcUsername: 'Steve',
+        mcUuid: 'uuid-1',
         created: true,
         source: 'plugin_callback',
       },
     })
+  })
+
+  it('falls back to 未知角色 when verify_success auditDetail.mcUsername is missing', async () => {
+    bus.publish(Events.AUTH_VERIFY_COMPLETED, {
+      store,
+      userId: 'user-1',
+      auditDetail: {
+        mojangUuid: 'mojang-uuid-123',
+        source: 'plugin_callback',
+      },
+    })
+
+    await waitForImmediate()
+
+    assert.strictEqual(calls.pushUserNotification.length, 1)
+    assert.strictEqual(
+      calls.pushUserNotification[0].payload.message,
+      '角色 未知角色 已通过正版验证'
+    )
+  })
+
+  it('falls back to 未知角色 when verify_failed auditDetail.mcUsername is missing', async () => {
+    bus.publish(Events.AUTH_VERIFY_FAILED, {
+      store,
+      userId: 'user-1',
+      auditDetail: {
+        reason: 'premium_expired',
+        source: 'plugin_callback',
+      },
+    })
+
+    await waitForImmediate()
+
+    assert.strictEqual(calls.pushUserNotification.length, 1)
+    assert.strictEqual(
+      calls.pushUserNotification[0].payload.message,
+      '角色 未知角色 验证失败：premium_expired'
+    )
+  })
+
+  it('ignores AUTH_LOGIN_SUCCESS when loginRow is missing', async () => {
+    bus.publish(Events.AUTH_LOGIN_SUCCESS, { store })
+
+    await waitForImmediate()
+
+    assert.strictEqual(calls.appendSecurityAudit.length, 0)
+  })
+
+  it('ignores AUTH_VERIFY_COMPLETED when auditDetail is missing', async () => {
+    bus.publish(Events.AUTH_VERIFY_COMPLETED, { store, userId: 'user-1' })
+
+    await waitForImmediate()
+
+    assert.strictEqual(calls.appendSecurityAudit.length, 0)
+    assert.strictEqual(calls.pushUserNotification.length, 0)
+  })
+
+  it('ignores AUTH_VERIFY_FAILED when auditDetail is missing', async () => {
+    bus.publish(Events.AUTH_VERIFY_FAILED, { store, userId: 'user-1' })
+
+    await waitForImmediate()
+
+    assert.strictEqual(calls.appendSecurityAudit.length, 0)
+    assert.strictEqual(calls.pushUserNotification.length, 0)
+  })
+
+  it('ignores SECURITY_ALERT_RAISED when alertPayload is missing', async () => {
+    bus.publish(Events.SECURITY_ALERT_RAISED, { store, targetUserId: 'user-1' })
+
+    await waitForImmediate()
+
+    assert.strictEqual(calls.appendSecurityAlert.length, 0)
+  })
+
+  it('ignores USER_BIND_EMAIL_COMPLETED when userId is missing', async () => {
+    bus.publish(Events.USER_BIND_EMAIL_COMPLETED, {
+      store,
+      email: 'test@example.com',
+      mcUsername: 'Steve',
+      mcUuid: 'uuid-1',
+      created: true,
+    })
+
+    await waitForImmediate()
+
+    assert.strictEqual(calls.appendSecurityAudit.length, 0)
+  })
+
+  it('handles null payload gracefully', async () => {
+    bus.publish(Events.AUTH_LOGIN_SUCCESS, null)
+    bus.publish(Events.AUTH_VERIFY_COMPLETED, null)
+    bus.publish(Events.AUTH_VERIFY_FAILED, null)
+    bus.publish(Events.SECURITY_ALERT_RAISED, null)
+    bus.publish(Events.USER_BIND_EMAIL_COMPLETED, null)
+
+    await waitForImmediate()
+
+    assert.strictEqual(calls.appendSecurityAudit.length, 0)
+    assert.strictEqual(calls.appendSecurityAlert.length, 0)
+    assert.strictEqual(calls.pushUserNotification.length, 0)
   })
 
   it('does not publish any events', async () => {

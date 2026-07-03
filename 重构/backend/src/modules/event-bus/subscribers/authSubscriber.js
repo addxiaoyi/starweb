@@ -1,12 +1,16 @@
-import crypto from 'crypto'
+import { randomUUID } from 'node:crypto'
 import { Events } from '../events.js'
+
+function isPlainObject(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
 function findUserByLinkedMcUsername(store, mcUsername) {
   const needle = String(mcUsername || '').trim().toLowerCase()
-  if (!needle) return undefined
+  if (!needle) return null
   return store.users.find(
     (x) => x.linkedMcUsername && x.linkedMcUsername.toLowerCase() === needle
-  )
+  ) || null
 }
 
 function buildCallbackRecord(store, body, meta) {
@@ -15,7 +19,7 @@ function buildCallbackRecord(store, body, meta) {
   const receivedAt = String(meta?.receivedAt || new Date().toISOString())
 
   return {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     event,
     username: String(body.username || '').trim(),
     uuid: String(body.uuid || '').trim(),
@@ -32,6 +36,169 @@ function buildCallbackRecord(store, body, meta) {
   }
 }
 
+async function handleVerifyPremium(bus, deps, store, body) {
+  const {
+    failMcVerifySession,
+    completeMcVerifySession,
+    markUserProfileDirty,
+    logger,
+  } = deps
+
+  const mcUsername = String(body.username || '').trim().toLowerCase()
+  const mojangUuid = String(body.mojang_uuid || body.uuid || '').trim() || null
+  const verified = body.verified === true || body.verified === 'true'
+
+  if (!mcUsername) return
+
+  const u = findUserByLinkedMcUsername(store, mcUsername)
+  if (!u) return
+
+  if (!verified || !mojangUuid) {
+    const conflictCode = verified ? 'callback_missing_mojang_uuid' : 'callback_not_verified'
+    const failResult = failMcVerifySession(u.id, 'verification_failed', {
+      mcUsername,
+      conflictCode,
+    })
+    const auditDetail = {
+      mcUsername,
+      source: 'plugin_callback',
+      reason: verified ? 'missing_mojang_uuid' : 'not_verified',
+      conflictCode: failResult?.session?.conflictCode || failResult?.code || conflictCode,
+      event: 'verify_premium',
+    }
+    bus.publish(Events.AUTH_VERIFY_FAILED, {
+      store,
+      userId: u.id,
+      auditDetail,
+    })
+    return
+  }
+
+  const completeResult = completeMcVerifySession(u.id, mojangUuid, { mcUsername })
+  if (completeResult.ok) {
+    u.linkedMcUuid = mojangUuid
+    markUserProfileDirty(u.id)
+    const auditDetail = {
+      mcUsername,
+      mojangUuid,
+      source: 'plugin_callback',
+      sessionId: completeResult.session?.id || null,
+      retryCount: Number(completeResult.session?.retries || 0),
+      maxRetries: Number(completeResult.session?.maxRetries || 0),
+    }
+    logger.info(`[starmc-api] 正版验证完成：${mcUsername} (uuid=${mojangUuid})，用户=${u.id}`)
+    bus.publish(Events.AUTH_VERIFY_COMPLETED, {
+      store,
+      userId: u.id,
+      auditDetail,
+    })
+  } else {
+    const auditDetail = {
+      mcUsername,
+      source: 'plugin_callback',
+      reason: 'verify_callback_conflict',
+      conflictCode: completeResult?.code || 'unknown',
+      event: 'verify_premium',
+    }
+    bus.publish(Events.AUTH_VERIFY_FAILED, {
+      store,
+      userId: u.id,
+      auditDetail,
+    })
+  }
+}
+
+async function handleVerifyFailed(bus, deps, store, body) {
+  const { failMcVerifySession } = deps
+  const mcUsername = String(body.username || '').trim().toLowerCase()
+  const reason = String(body.reason || body.error || 'verify_failed').trim().toLowerCase()
+
+  if (!mcUsername) return
+
+  const u = findUserByLinkedMcUsername(store, mcUsername)
+  if (!u) return
+
+  const failResult = failMcVerifySession(u.id, reason, {
+    mcUsername,
+    conflictCode: 'plugin_verify_failed',
+  })
+  if (failResult.ok) {
+    const auditDetail = {
+      mcUsername,
+      reason,
+      source: 'plugin_callback',
+      sessionId: failResult.session?.id || null,
+      retryCount: Number(failResult.session?.retries || 0),
+      maxRetries: Number(failResult.session?.maxRetries || 0),
+      conflictCode: failResult.session?.conflictCode || 'plugin_verify_failed',
+    }
+    bus.publish(Events.AUTH_VERIFY_FAILED, {
+      store,
+      userId: u.id,
+      auditDetail,
+    })
+  } else {
+    const auditDetail = {
+      mcUsername,
+      reason,
+      source: 'plugin_callback',
+      conflictCode: failResult?.code || 'unknown',
+      event: 'verify_failed',
+    }
+    bus.publish(Events.AUTH_VERIFY_FAILED, {
+      store,
+      userId: u.id,
+      auditDetail,
+    })
+  }
+}
+
+async function handleLoginSuccess(bus, deps, store, body) {
+  const { appendLoginEvent } = deps
+  const loginRow = appendLoginEvent(store, body)
+  bus.publish(Events.AUTH_LOGIN_SUCCESS, {
+    store,
+    loginRow,
+    source: 'plugin_callback',
+  })
+}
+
+async function handleSecurityAlert(bus, deps, store, body) {
+  const { findUserByExternalUserId, ensureSecurityCenter, computeLoginRisk } = deps
+  const externalUserId = String(body.external_user_id || '').trim()
+  const linkedUser = externalUserId ? findUserByExternalUserId(store, externalUserId) : null
+  const fallbackUser = !linkedUser && body.username
+    ? findUserByLinkedMcUsername(store, body.username)
+    : null
+  const targetUser = linkedUser || fallbackUser
+  const targetUserId = targetUser?.id || externalUserId || 'anonymous'
+  const computed = computeLoginRisk(ensureSecurityCenter(store), targetUserId, {
+    fingerprint: body.fingerprint,
+    ip: body.current_ip || body.ip,
+    location: body.location,
+    asn: body.asn,
+  })
+  const alertPayload = {
+    username: String(body.username || '').trim() || null,
+    type: String(body.type || '').trim() || 'unknown',
+    ip: String(body.current_ip || body.ip || '').trim() || null,
+    fingerprint: String(body.fingerprint || '').trim() || null,
+    asn: String(body.asn || '').trim() || null,
+    location: String(body.location || '').trim() || null,
+    isp: String(body.isp || '').trim() || null,
+    riskScore: body.risk_score != null ? Number(body.risk_score) : computed.riskScore,
+    riskLevel: computed.riskLevel,
+    deviceProfile: String(body.device_profile || '').trim() || computed.deviceProfile,
+    externalUserId: externalUserId || null,
+    source: 'plugin_callback',
+  }
+  bus.publish(Events.SECURITY_ALERT_RAISED, {
+    store,
+    targetUserId,
+    alertPayload,
+  })
+}
+
 /**
  * 注册 Auth 回调订阅器。
  *
@@ -44,21 +211,32 @@ function buildCallbackRecord(store, body, meta) {
  */
 export function registerAuthSubscriber(bus, deps) {
   const {
-    appendLoginEvent,
-    ensureSecurityCenter,
-    computeLoginRisk,
-    findUserByExternalUserId,
-    failMcVerifySession,
-    completeMcVerifySession,
-    markUserProfileDirty,
     markKvDirty,
     scheduleSave,
     logger = console,
   } = deps
 
   bus.subscribe(Events.PLUGIN_CALLBACK_RECEIVED, async (payload) => {
-    const { store, body, meta } = payload || {}
-    const event = String(body?.event || '').trim()
+    if (!isPlainObject(payload)) {
+      logger.warn('[auth-subscriber] invalid payload shape, expected plain object', { payload })
+      return
+    }
+
+    const { store, body, meta } = payload
+    if (!store) {
+      logger.warn('[auth-subscriber] invalid payload: store is required', { payload })
+      return
+    }
+    if (!isPlainObject(body)) {
+      logger.warn('[auth-subscriber] invalid body shape, expected plain object', { body })
+      return
+    }
+
+    const event = String(body.event || '').trim()
+    if (!event) {
+      logger.warn('[auth-subscriber] invalid body: event must be a non-empty string', { body })
+      return
+    }
 
     const record = buildCallbackRecord(store, body, meta)
 
@@ -71,161 +249,20 @@ export function registerAuthSubscriber(bus, deps) {
     markKvDirty('authx_events')
     scheduleSave()
 
-    // ── verify_premium ─────────────────────────────────────────────────────
     if (event === 'verify_premium') {
-      const mcUsername = String(body.username || '').trim().toLowerCase()
-      const mojangUuid = String(body.mojang_uuid || body.uuid || '').trim() || null
-      const verified = body.verified === true || body.verified === 'true'
-
-      if (mcUsername && (!verified || !mojangUuid)) {
-        const u = findUserByLinkedMcUsername(store, mcUsername)
-        if (u) {
-          const conflictCode = verified ? 'callback_missing_mojang_uuid' : 'callback_not_verified'
-          const failResult = failMcVerifySession(u.id, 'verification_failed', {
-            mcUsername,
-            conflictCode,
-          })
-          const auditDetail = {
-            mcUsername,
-            source: 'plugin_callback',
-            reason: verified ? 'missing_mojang_uuid' : 'not_verified',
-            conflictCode: failResult?.session?.conflictCode || failResult?.code || conflictCode,
-            event: 'verify_premium',
-          }
-          bus.publish(Events.AUTH_VERIFY_FAILED, {
-            store,
-            userId: u.id,
-            auditDetail,
-          })
-        }
-      } else if (mcUsername) {
-        const u = findUserByLinkedMcUsername(store, mcUsername)
-        if (u) {
-          const completeResult = completeMcVerifySession(u.id, mojangUuid, { mcUsername })
-          if (completeResult.ok) {
-            if (mojangUuid) {
-              u.linkedMcUuid = mojangUuid
-              markUserProfileDirty(u.id)
-            }
-            const auditDetail = {
-              mcUsername,
-              mojangUuid,
-              source: 'plugin_callback',
-              sessionId: completeResult.session?.id || null,
-              retryCount: Number(completeResult.session?.retries || 0),
-              maxRetries: Number(completeResult.session?.maxRetries || 0),
-            }
-            logger.info(`[starmc-api] 正版验证完成：${mcUsername} (uuid=${mojangUuid})，用户=${u.id}`)
-            bus.publish(Events.AUTH_VERIFY_COMPLETED, {
-              store,
-              userId: u.id,
-              auditDetail,
-            })
-          } else {
-            const auditDetail = {
-              mcUsername,
-              source: 'plugin_callback',
-              conflictCode: completeResult?.code || 'unknown',
-              event: 'verify_premium',
-            }
-            bus.publish(Events.AUTH_VERIFY_FAILED, {
-              store,
-              userId: u.id,
-              auditDetail,
-            })
-          }
-        }
-      }
+      await handleVerifyPremium(bus, deps, store, body)
     }
 
-    // ── verify_failed / verify_premium_failed ──────────────────────────────
     if (event === 'verify_failed' || event === 'verify_premium_failed') {
-      const mcUsername = String(body.username || '').trim().toLowerCase()
-      const reason = String(body.reason || body.error || 'verify_failed').trim().toLowerCase()
-      if (mcUsername) {
-        const u = findUserByLinkedMcUsername(store, mcUsername)
-        if (u) {
-          const failResult = failMcVerifySession(u.id, reason, {
-            mcUsername,
-            conflictCode: 'plugin_verify_failed',
-          })
-          if (failResult.ok) {
-            const auditDetail = {
-              mcUsername,
-              reason,
-              source: 'plugin_callback',
-              sessionId: failResult.session?.id || null,
-              retryCount: Number(failResult.session?.retries || 0),
-              maxRetries: Number(failResult.session?.maxRetries || 0),
-              conflictCode: failResult.session?.conflictCode || 'plugin_verify_failed',
-            }
-            bus.publish(Events.AUTH_VERIFY_FAILED, {
-              store,
-              userId: u.id,
-              auditDetail,
-            })
-          } else {
-            const auditDetail = {
-              mcUsername,
-              reason,
-              source: 'plugin_callback',
-              conflictCode: failResult?.code || 'unknown',
-              event: 'verify_failed',
-            }
-            bus.publish(Events.AUTH_VERIFY_FAILED, {
-              store,
-              userId: u.id,
-              auditDetail,
-            })
-          }
-        }
-      }
+      await handleVerifyFailed(bus, deps, store, body)
     }
 
-    // ── login_success ──────────────────────────────────────────────────────
     if (event === 'login_success') {
-      const loginRow = appendLoginEvent(store, body)
-      bus.publish(Events.AUTH_LOGIN_SUCCESS, {
-        store,
-        loginRow,
-        source: 'plugin_callback',
-      })
+      await handleLoginSuccess(bus, deps, store, body)
     }
 
-    // ── security_alert ─────────────────────────────────────────────────────
     if (event === 'security_alert') {
-      const externalUserId = String(body.external_user_id || '').trim()
-      const linkedUser = externalUserId ? findUserByExternalUserId(store, externalUserId) : null
-      const fallbackUser = !linkedUser && body.username
-        ? findUserByLinkedMcUsername(store, body.username)
-        : null
-      const targetUser = linkedUser || fallbackUser
-      const targetUserId = targetUser?.id || externalUserId || 'anonymous'
-      const computed = computeLoginRisk(ensureSecurityCenter(store), targetUserId, {
-        fingerprint: body.fingerprint,
-        ip: body.current_ip || body.ip,
-        location: body.location,
-        asn: body.asn,
-      })
-      const alertPayload = {
-        username: String(body.username || '').trim() || null,
-        type: String(body.type || '').trim() || 'unknown',
-        ip: String(body.current_ip || body.ip || '').trim() || null,
-        fingerprint: String(body.fingerprint || '').trim() || null,
-        asn: String(body.asn || '').trim() || null,
-        location: String(body.location || '').trim() || null,
-        isp: String(body.isp || '').trim() || null,
-        riskScore: body.risk_score != null ? Number(body.risk_score) : computed.riskScore,
-        riskLevel: String(body.risk_level || '').trim().toLowerCase() || computed.riskLevel,
-        deviceProfile: String(body.device_profile || '').trim() || computed.deviceProfile,
-        externalUserId: externalUserId || null,
-        source: 'plugin_callback',
-      }
-      bus.publish(Events.SECURITY_ALERT_RAISED, {
-        store,
-        targetUserId,
-        alertPayload,
-      })
+      await handleSecurityAlert(bus, deps, store, body)
     }
   })
 }

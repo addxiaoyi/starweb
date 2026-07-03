@@ -40,7 +40,7 @@ export function registerSecuritySubscriber(bus, deps) {
     pushUserNotification(store, userId, {
       type: 'verify_success',
       title: '正版验证成功',
-      message: `角色 ${auditDetail.mcUsername} 已通过正版验证`,
+      message: `角色 ${auditDetail.mcUsername || '未知角色'} 已通过正版验证`,
       detail: {
         mcUsername: auditDetail.mcUsername,
         mojangUuid: auditDetail.mojangUuid,
@@ -56,7 +56,7 @@ export function registerSecuritySubscriber(bus, deps) {
     pushUserNotification(store, userId, {
       type: 'verify_failed',
       title: '正版验证失败',
-      message: `角色 ${auditDetail.mcUsername} 验证失败：${auditDetail.reason || 'verify_failed'}`,
+      message: `角色 ${auditDetail.mcUsername || '未知角色'} 验证失败：${auditDetail.reason || 'verify_failed'}`,
       detail: {
         mcUsername: auditDetail.mcUsername,
         reason: auditDetail.reason,
@@ -78,11 +78,12 @@ export function registerSecuritySubscriber(bus, deps) {
   })
 
   bus.subscribe(Events.USER_BIND_EMAIL_COMPLETED, (payload) => {
-    const { store, userId, email, mcUsername, created } = payload || {}
+    const { store, userId, email, mcUsername, mcUuid, created } = payload || {}
     if (!userId) return
     appendSecurityAudit(store, userId, 'plugin_bind_email', {
       email,
       mcUsername,
+      mcUuid,
       created,
       source: 'plugin_callback',
     })

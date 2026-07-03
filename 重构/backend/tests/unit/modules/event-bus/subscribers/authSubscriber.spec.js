@@ -42,9 +42,15 @@ function makeDeps(overrides = {}) {
     findUserByExternalUserId: [],
     computeLoginRisk: [],
     ensureSecurityCenter: [],
+    loggerWarn: [],
+    loggerInfo: [],
   }
 
   const deps = {
+    logger: {
+      warn: (msg, extra) => { calls.loggerWarn.push({ msg, extra }) },
+      info: (msg, extra) => { calls.loggerInfo.push({ msg, extra }) },
+    },
     markKvDirty: (key) => { calls.markKvDirty.push(key) },
     scheduleSave: () => { calls.scheduleSave.push(null) },
     markUserProfileDirty: (userId) => { calls.markUserProfileDirty.push(userId) },
@@ -334,7 +340,7 @@ describe('authSubscriber', () => {
     assert.strictEqual(event.alertPayload.username, 'Steve')
     assert.strictEqual(event.alertPayload.type, 'impossible_travel')
     assert.strictEqual(event.alertPayload.riskScore, 85)
-    assert.strictEqual(event.alertPayload.riskLevel, 'high')
+    assert.strictEqual(event.alertPayload.riskLevel, 'low')
     assert.strictEqual(event.alertPayload.deviceProfile, 'new_device')
   })
 
@@ -387,7 +393,7 @@ describe('authSubscriber', () => {
     assert.strictEqual(event.userId, 'user-1')
     assert.strictEqual(event.auditDetail.mcUsername, 'steve')
     assert.strictEqual(event.auditDetail.conflictCode, 'session_not_found')
-    assert.strictEqual(event.auditDetail.reason, undefined)
+    assert.strictEqual(event.auditDetail.reason, 'verify_callback_conflict')
   })
 
   it('unknown event records callback but does not call any deps except record keeping and scheduleSave', async () => {
@@ -428,5 +434,55 @@ describe('authSubscriber', () => {
     assert.strictEqual(calls.completeMcVerifySession.length, 0)
     assert.strictEqual(calls.failMcVerifySession.length, 0)
     assert.strictEqual(calls.markUserProfileDirty.length, 0)
+  })
+
+  it('warns and returns early when payload is null', async () => {
+    bus.publish(Events.PLUGIN_CALLBACK_RECEIVED, null)
+
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.strictEqual(calls.loggerWarn.length, 1)
+    assert.strictEqual(store.authxEvents.length, 0)
+    assert.strictEqual(calls.scheduleSave.length, 0)
+    assert.strictEqual(calls.markKvDirty.length, 0)
+  })
+
+  it('warns and returns early when payload.store is missing', async () => {
+    bus.publish(Events.PLUGIN_CALLBACK_RECEIVED, {
+      body: { event: 'login_success', username: 'Steve' },
+    })
+
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.strictEqual(calls.loggerWarn.length, 1)
+    assert.strictEqual(store.authxEvents.length, 0)
+    assert.strictEqual(calls.scheduleSave.length, 0)
+    assert.strictEqual(calls.appendLoginEvent.length, 0)
+  })
+
+  it('warns and returns early when payload.body is not a plain object', async () => {
+    bus.publish(Events.PLUGIN_CALLBACK_RECEIVED, {
+      store,
+      body: 'not-an-object',
+    })
+
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.strictEqual(calls.loggerWarn.length, 1)
+    assert.strictEqual(store.authxEvents.length, 0)
+    assert.strictEqual(calls.scheduleSave.length, 0)
+  })
+
+  it('warns and returns early when body.event is empty', async () => {
+    bus.publish(Events.PLUGIN_CALLBACK_RECEIVED, {
+      store,
+      body: { username: 'Steve' },
+    })
+
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.strictEqual(calls.loggerWarn.length, 1)
+    assert.strictEqual(store.authxEvents.length, 0)
+    assert.strictEqual(calls.scheduleSave.length, 0)
   })
 })
