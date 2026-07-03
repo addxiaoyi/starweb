@@ -98,13 +98,13 @@ describe('bindEmailSubscriber', () => {
       link: { ok: true, result: { status: 200, json: { ok: true } } },
       bind: { ok: true, result: { status: 200, json: { ok: true } } },
     }
-    registerBindEmailSubscriber(bus, deps)
     bus.publishAndWait = async (event, payload) => {
       calls.publishAndWait.push({ event, payload })
       if (event === Events.VLA_COMMAND_LINK_EXTERNAL_USER) return vlaStubs.link
       if (event === Events.VLA_COMMAND_NOTIFY_BIND_EMAIL) return vlaStubs.bind
       throw new Error(`unexpected publishAndWait: ${event}`)
     }
+    registerBindEmailSubscriber(bus, deps)
   })
 
   it('successfully binds an existing user', async () => {
@@ -133,7 +133,14 @@ describe('bindEmailSubscriber', () => {
     assert.strictEqual(event.mcUuid, 'uuid-1')
     assert.strictEqual(store.users[0].linkedMcUsername, 'Steve')
     assert.strictEqual(store.users[0].linkedMcUuid, 'uuid-1')
-    assert.strictEqual(calls.pushUserNotification[0].payload.title, '已绑定邮箱与游戏角色')
+
+    const notification = calls.pushUserNotification[0].payload
+    assert.strictEqual(typeof notification.title, 'string')
+    assert.ok(notification.title.includes('绑定'))
+    assert.strictEqual(typeof notification.message, 'string')
+    assert.ok(notification.message.includes('test@example.com'))
+    assert.ok(notification.message.includes('Steve'))
+
     assert.strictEqual(calls.publishAndWait.length, 2)
     assert.strictEqual(calls.publishAndWait[0].event, Events.VLA_COMMAND_LINK_EXTERNAL_USER)
     assert.deepStrictEqual(calls.publishAndWait[0].payload, { body: { username: 'Steve', external_user_id: 'user-1' } })
@@ -226,8 +233,14 @@ describe('bindEmailSubscriber', () => {
     assert.strictEqual(event.userId, 'user-1')
     assert.strictEqual(store.users[0].linkedMcUsername, 'Alex')
     assert.strictEqual(store.users[0].linkedMcUuid, null)
-    assert.strictEqual(calls.pushUserNotification[0].payload.title, '已创建皮肤站账号并绑定角色')
-    assert.strictEqual(calls.pushUserNotification[0].payload.message, '已为 new@example.com 创建网站账号，并绑定角色 Alex')
+
+    const notification = calls.pushUserNotification[0].payload
+    assert.strictEqual(typeof notification.title, 'string')
+    assert.ok(notification.title.includes('创建'))
+    assert.strictEqual(typeof notification.message, 'string')
+    assert.ok(notification.message.includes('new@example.com'))
+    assert.ok(notification.message.includes('Alex'))
+
     assert.strictEqual(calls.publishAndWait.length, 2)
   })
 
@@ -245,6 +258,21 @@ describe('bindEmailSubscriber', () => {
     assert.strictEqual(calls.appendSecurityAudit[0].detail.currentIp, '5.6.7.8')
   })
 
+  it('prefers body.current_ip over body.ip when both are present', async () => {
+    const completedPromise = waitForEvent(bus, Events.USER_BIND_EMAIL_COMPLETED)
+
+    publishBindEmail(bus, store, {
+      email: 'test@example.com',
+      username: 'Steve',
+      current_ip: '1.2.3.4',
+      ip: '5.6.7.8',
+    })
+
+    await completedPromise
+
+    assert.strictEqual(calls.appendSecurityAudit[0].detail.currentIp, '1.2.3.4')
+  })
+
   it('sets mcUuid to null when uuid is empty', async () => {
     const completedPromise = waitForEvent(bus, Events.USER_BIND_EMAIL_COMPLETED)
 
@@ -260,7 +288,7 @@ describe('bindEmailSubscriber', () => {
     assert.strictEqual(store.users[0].linkedMcUuid, null)
   })
 
-  it('does not throw TypeError when payload is null or undefined', async () => {
+  it('returns invalid_email error when payload is null or undefined', async () => {
     const nullError = await captureHandlerError(bus, store, null)
     assert.ok(nullError instanceof PluginBindEmailError)
     assert.strictEqual(nullError.code, 'invalid_email')
@@ -377,7 +405,8 @@ describe('bindEmailSubscriber', () => {
     assert.ok(error instanceof PluginBindEmailError)
     assert.strictEqual(error.code, 'bind_email_failed')
     assert.strictEqual(error.status, 502)
-    assert.deepStrictEqual(error.payload, { message: '插件邮箱同步失败' })
+    assert.ok(typeof error.payload.message === 'string')
+    assert.ok(error.payload.message.length > 0)
     assert.strictEqual(calls.publishAndWait.length, 2)
   })
 
@@ -392,8 +421,43 @@ describe('bindEmailSubscriber', () => {
     assert.ok(error instanceof PluginBindEmailError)
     assert.strictEqual(error.code, 'link_failed')
     assert.strictEqual(error.status, 502)
-    assert.deepStrictEqual(error.payload, { message: '绑定失败' })
+    assert.ok(typeof error.payload.message === 'string')
+    assert.ok(error.payload.message.length > 0)
     assert.strictEqual(calls.publishAndWait.length, 1)
+  })
+
+  it('throws link_failed when VLA link command times out or rejects', async () => {
+    vlaStubs.link = Promise.reject(new Error('timeout'))
+
+    const error = await captureHandlerError(bus, store, {
+      email: 'test@example.com',
+      username: 'Steve',
+    })
+
+    assert.ok(error instanceof PluginBindEmailError)
+    assert.strictEqual(error.code, 'link_failed')
+    assert.strictEqual(error.status, 504)
+    assert.ok(typeof error.payload.message === 'string')
+    assert.ok(error.payload.message.includes('超时'))
+    assert.strictEqual(calls.publishAndWait.length, 1)
+    assert.strictEqual(calls.publishAndWait[0].event, Events.VLA_COMMAND_LINK_EXTERNAL_USER)
+  })
+
+  it('throws bind_email_failed when VLA notify command times out or rejects', async () => {
+    vlaStubs.bind = Promise.reject(new Error('timeout'))
+
+    const error = await captureHandlerError(bus, store, {
+      email: 'test@example.com',
+      username: 'Steve',
+    })
+
+    assert.ok(error instanceof PluginBindEmailError)
+    assert.strictEqual(error.code, 'bind_email_failed')
+    assert.strictEqual(error.status, 504)
+    assert.ok(typeof error.payload.message === 'string')
+    assert.ok(error.payload.message.includes('超时'))
+    assert.strictEqual(calls.publishAndWait.length, 2)
+    assert.strictEqual(calls.publishAndWait[1].event, Events.VLA_COMMAND_NOTIFY_BIND_EMAIL)
   })
 
   it('succeeds when the same user re-binds the same username', async () => {

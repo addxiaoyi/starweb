@@ -1,6 +1,16 @@
 import { Events } from '../events.js'
 import { PluginBindEmailError } from '../../plugin-gateway/bindEmailService.js'
 
+const MIN_MC_USERNAME_LENGTH = 3
+const MAX_MC_USERNAME_LENGTH = 16
+
+const DEFAULT_MESSAGES = {
+  link_failed: '绑定失败',
+  bind_email_failed: '插件邮箱同步失败',
+  link_timeout: 'VLA 命令超时或不可用',
+  bind_timeout: 'VLA 邮箱同步超时或不可用',
+}
+
 /**
  * 注册插件邮箱绑定事件订阅器。
  *
@@ -33,7 +43,7 @@ export function registerBindEmailSubscriber(bus, deps) {
     if (!isValidEmailAddress(email)) {
       throw new PluginBindEmailError('invalid_email', 400)
     }
-    if (!mcUsername || mcUsername.length < 3 || mcUsername.length > 16) {
+    if (!mcUsername || mcUsername.length < MIN_MC_USERNAME_LENGTH || mcUsername.length > MAX_MC_USERNAME_LENGTH) {
       throw new PluginBindEmailError('validation_error', 400)
     }
 
@@ -49,27 +59,41 @@ export function registerBindEmailSubscriber(bus, deps) {
       throw new PluginBindEmailError('email_already_linked', 409, { linkedMcUsername: prevLinked })
     }
 
-    const linkResult = await bus.publishAndWait(Events.VLA_COMMAND_LINK_EXTERNAL_USER, {
-      body: { username: mcUsername, external_user_id: localUser.id },
-    })
+    let linkResult
+    try {
+      linkResult = await bus.publishAndWait(Events.VLA_COMMAND_LINK_EXTERNAL_USER, {
+        body: { username: mcUsername, external_user_id: localUser.id },
+      })
+    } catch {
+      throw new PluginBindEmailError('link_failed', 504, {
+        message: DEFAULT_MESSAGES.link_timeout,
+      })
+    }
     if (!linkResult.result?.skipped && !linkResult.ok) {
       const status = linkResult.result?.status >= 400 && linkResult.result?.status < 600
         ? linkResult.result.status
         : 502
       throw new PluginBindEmailError('link_failed', status, {
-        message: linkResult.result?.json?.error || '绑定失败',
+        message: linkResult.result?.json?.error || DEFAULT_MESSAGES.link_failed,
       })
     }
 
-    const bindResult = await bus.publishAndWait(Events.VLA_COMMAND_NOTIFY_BIND_EMAIL, {
-      body: { username: mcUsername, email },
-    })
+    let bindResult
+    try {
+      bindResult = await bus.publishAndWait(Events.VLA_COMMAND_NOTIFY_BIND_EMAIL, {
+        body: { username: mcUsername, email },
+      })
+    } catch {
+      throw new PluginBindEmailError('bind_email_failed', 504, {
+        message: DEFAULT_MESSAGES.bind_timeout,
+      })
+    }
     if (!bindResult.result?.skipped && !bindResult.ok) {
       const status = bindResult.result?.status >= 400 && bindResult.result?.status < 600
         ? bindResult.result.status
         : 502
       throw new PluginBindEmailError('bind_email_failed', status, {
-        message: bindResult.result?.json?.error || '插件邮箱同步失败',
+        message: bindResult.result?.json?.error || DEFAULT_MESSAGES.bind_email_failed,
       })
     }
 
