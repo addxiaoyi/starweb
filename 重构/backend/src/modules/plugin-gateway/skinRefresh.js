@@ -1,5 +1,6 @@
 import { asyncHandler } from '../../middleware/error.js'
 import { Events } from '../event-bus/events.js'
+import { timingSafeEqualUtf8 } from '../../runtimeCompat.js'
 
 function resolveSkinBridgeSecret(req) {
   const h1 = (req.headers['x-skin-bridge-secret'] || '').trim()
@@ -14,7 +15,7 @@ function verifySkinRefreshSecret(req, res, config, jsonErr) {
   }
   if (config.pluginRefreshSecret) {
     const h = resolveSkinBridgeSecret(req)
-    if (h !== config.pluginRefreshSecret) {
+    if (!timingSafeEqualUtf8(h, config.pluginRefreshSecret)) {
       jsonErr(res, 401, '未授权', 'unauthorized')
       return false
     }
