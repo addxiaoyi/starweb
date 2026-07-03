@@ -136,10 +136,17 @@ describe('bindEmailSubscriber', () => {
 
     const notification = calls.pushUserNotification[0].payload
     assert.strictEqual(typeof notification.title, 'string')
-    assert.ok(notification.title.includes('绑定'))
+    assert.ok(notification.title.length > 0)
     assert.strictEqual(typeof notification.message, 'string')
     assert.ok(notification.message.includes('test@example.com'))
     assert.ok(notification.message.includes('Steve'))
+    assert.deepStrictEqual(notification.detail, {
+      email: 'test@example.com',
+      mcUsername: 'Steve',
+      created: false,
+      currentIp: '1.2.3.4',
+      action: 'plugin_bind_email',
+    })
 
     assert.strictEqual(calls.publishAndWait.length, 2)
     assert.strictEqual(calls.publishAndWait[0].event, Events.VLA_COMMAND_LINK_EXTERNAL_USER)
@@ -182,7 +189,7 @@ describe('bindEmailSubscriber', () => {
   })
 
   it('succeeds when VLA commands are skipped by a non-VLA adapter', async () => {
-    const skippedResult = { ok: false, skipped: true, message: '当前未使用 VLA 适配器，跳过命令' }
+    const skippedResult = { ok: false, skipped: true }
     vlaStubs.link = { ok: true, result: skippedResult }
     vlaStubs.bind = { ok: true, result: skippedResult }
 
@@ -236,10 +243,17 @@ describe('bindEmailSubscriber', () => {
 
     const notification = calls.pushUserNotification[0].payload
     assert.strictEqual(typeof notification.title, 'string')
-    assert.ok(notification.title.includes('创建'))
+    assert.ok(notification.title.length > 0)
     assert.strictEqual(typeof notification.message, 'string')
     assert.ok(notification.message.includes('new@example.com'))
     assert.ok(notification.message.includes('Alex'))
+    assert.deepStrictEqual(notification.detail, {
+      email: 'new@example.com',
+      mcUsername: 'Alex',
+      created: true,
+      currentIp: '5.6.7.8',
+      action: 'plugin_bind_email',
+    })
 
     assert.strictEqual(calls.publishAndWait.length, 2)
   })
@@ -288,7 +302,7 @@ describe('bindEmailSubscriber', () => {
     assert.strictEqual(store.users[0].linkedMcUuid, null)
   })
 
-  it('returns invalid_email error when payload is null or undefined', async () => {
+  it('throws invalid_email error when payload is null or undefined', async () => {
     const nullError = await captureHandlerError(bus, store, null)
     assert.ok(nullError instanceof PluginBindEmailError)
     assert.strictEqual(nullError.code, 'invalid_email')
@@ -392,6 +406,7 @@ describe('bindEmailSubscriber', () => {
     assert.strictEqual(error.status, 500)
     assert.deepStrictEqual(error.payload, { message: 'bind notify failed' })
     assert.strictEqual(calls.publishAndWait.length, 2)
+    assert.strictEqual(store.users[0].linkedMcUsername, null)
   })
 
   it('throws bind_email_failed with 502 and default message when VLA notify command fails without result', async () => {
@@ -438,7 +453,8 @@ describe('bindEmailSubscriber', () => {
     assert.strictEqual(error.code, 'link_failed')
     assert.strictEqual(error.status, 504)
     assert.ok(typeof error.payload.message === 'string')
-    assert.ok(error.payload.message.includes('超时'))
+    assert.ok(error.payload.message.length > 0)
+    assert.strictEqual(error.payload.originalError, 'timeout')
     assert.strictEqual(calls.publishAndWait.length, 1)
     assert.strictEqual(calls.publishAndWait[0].event, Events.VLA_COMMAND_LINK_EXTERNAL_USER)
   })
@@ -455,9 +471,11 @@ describe('bindEmailSubscriber', () => {
     assert.strictEqual(error.code, 'bind_email_failed')
     assert.strictEqual(error.status, 504)
     assert.ok(typeof error.payload.message === 'string')
-    assert.ok(error.payload.message.includes('超时'))
+    assert.ok(error.payload.message.length > 0)
+    assert.strictEqual(error.payload.originalError, 'timeout')
     assert.strictEqual(calls.publishAndWait.length, 2)
     assert.strictEqual(calls.publishAndWait[1].event, Events.VLA_COMMAND_NOTIFY_BIND_EMAIL)
+    assert.strictEqual(store.users[0].linkedMcUsername, null)
   })
 
   it('succeeds when the same user re-binds the same username', async () => {

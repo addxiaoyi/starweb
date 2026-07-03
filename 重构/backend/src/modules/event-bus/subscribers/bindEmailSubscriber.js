@@ -11,6 +11,17 @@ const DEFAULT_MESSAGES = {
   bind_timeout: 'VLA 邮箱同步超时或不可用',
 }
 
+async function executeVlaCommand(bus, event, payload, { errorCode, defaultMessage }) {
+  try {
+    return await bus.publishAndWait(event, payload)
+  } catch (err) {
+    throw new PluginBindEmailError(errorCode, 504, {
+      message: defaultMessage,
+      originalError: err.message,
+    })
+  }
+}
+
 /**
  * 注册插件邮箱绑定事件订阅器。
  *
@@ -59,16 +70,12 @@ export function registerBindEmailSubscriber(bus, deps) {
       throw new PluginBindEmailError('email_already_linked', 409, { linkedMcUsername: prevLinked })
     }
 
-    let linkResult
-    try {
-      linkResult = await bus.publishAndWait(Events.VLA_COMMAND_LINK_EXTERNAL_USER, {
-        body: { username: mcUsername, external_user_id: localUser.id },
-      })
-    } catch {
-      throw new PluginBindEmailError('link_failed', 504, {
-        message: DEFAULT_MESSAGES.link_timeout,
-      })
-    }
+    const linkResult = await executeVlaCommand(
+      bus,
+      Events.VLA_COMMAND_LINK_EXTERNAL_USER,
+      { body: { username: mcUsername, external_user_id: localUser.id } },
+      { errorCode: 'link_failed', defaultMessage: DEFAULT_MESSAGES.link_timeout }
+    )
     if (!linkResult.result?.skipped && !linkResult.ok) {
       const status = linkResult.result?.status >= 400 && linkResult.result?.status < 600
         ? linkResult.result.status
@@ -78,16 +85,12 @@ export function registerBindEmailSubscriber(bus, deps) {
       })
     }
 
-    let bindResult
-    try {
-      bindResult = await bus.publishAndWait(Events.VLA_COMMAND_NOTIFY_BIND_EMAIL, {
-        body: { username: mcUsername, email },
-      })
-    } catch {
-      throw new PluginBindEmailError('bind_email_failed', 504, {
-        message: DEFAULT_MESSAGES.bind_timeout,
-      })
-    }
+    const bindResult = await executeVlaCommand(
+      bus,
+      Events.VLA_COMMAND_NOTIFY_BIND_EMAIL,
+      { body: { username: mcUsername, email } },
+      { errorCode: 'bind_email_failed', defaultMessage: DEFAULT_MESSAGES.bind_timeout }
+    )
     if (!bindResult.result?.skipped && !bindResult.ok) {
       const status = bindResult.result?.status >= 400 && bindResult.result?.status < 600
         ? bindResult.result.status
