@@ -52,6 +52,10 @@ function createMockEventBus() {
     publish: (event, payload) => {
       published.push({ event, payload })
     },
+    publishAndWait: async (event, payload) => {
+      published.push({ event, payload, awaited: true })
+      return { ok: true, result: { queued: true } }
+    },
   }
 }
 
@@ -325,6 +329,7 @@ describe('plugin-gateway handlers', () => {
       assert.strictEqual(deps.eventBus.published.length, 1)
       const published = deps.eventBus.published[0]
       assert.strictEqual(published.event, Events.PLUGIN_BIND_EMAIL_RECEIVED)
+      assert.strictEqual(published.awaited, true)
       assert.deepStrictEqual(published.payload.body, {
         email: 'test@example.com',
         username: 'Steve',

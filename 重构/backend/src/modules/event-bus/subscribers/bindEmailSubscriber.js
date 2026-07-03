@@ -44,105 +44,136 @@ export function registerBindEmailSubscriber(bus, deps) {
   } = deps
 
   bus.subscribe(Events.PLUGIN_BIND_EMAIL_RECEIVED, async (payload) => {
-    const { store, body } = payload || {}
+    const { store, body, _replyTo } = payload || {}
 
-    if (!store) {
-      throw new PluginBindEmailError('validation_error', 400, { message: '缺少 store' })
+    function sendReply(result) {
+      if (_replyTo) {
+        bus.publish(`vla:command:reply:${_replyTo}`, result)
+      }
     }
 
-    const email = String(body?.email || '').trim().toLowerCase()
-    const mcUsername = String(body?.username || '').trim()
-    const externalUserId = String(body?.external_user_id || '').trim()
-    const mcUuid = String(body?.uuid || '').trim() || null
-    const currentIp = String(body?.current_ip || body?.ip || '').trim() || null
-
-    if (!isValidEmailAddress(email)) {
-      throw new PluginBindEmailError('invalid_email', 400)
-    }
-    if (!mcUsername || mcUsername.length < MIN_MC_USERNAME_LENGTH || mcUsername.length > MAX_MC_USERNAME_LENGTH) {
-      throw new PluginBindEmailError('validation_error', 400)
-    }
-
-    const existingByMc = findUserByLinkedMcUsername(store, mcUsername)
-    const { localUser, created } = await ensureSiteUserForPluginEmail(store, email)
-
-    if (existingByMc && String(existingByMc.id || '') !== String(localUser.id || '')) {
-      throw new PluginBindEmailError('mc_already_linked', 409, { linkedUserId: existingByMc.id })
-    }
-
-    const prevLinked = String(localUser.linkedMcUsername || '').trim()
-    if (prevLinked && prevLinked.toLowerCase() !== mcUsername.toLowerCase()) {
-      throw new PluginBindEmailError('email_already_linked', 409, { linkedMcUsername: prevLinked })
-    }
-
-    const linkResult = await executeVlaCommand(
-      bus,
-      Events.VLA_COMMAND_LINK_EXTERNAL_USER,
-      { body: { username: mcUsername, external_user_id: localUser.id } },
-      { errorCode: 'link_failed', defaultMessage: DEFAULT_MESSAGES.link_timeout }
-    )
-    if (!linkResult.result?.skipped && !linkResult.ok) {
-      const status = linkResult.result?.status >= 400 && linkResult.result?.status < 600
-        ? linkResult.result.status
-        : 502
-      throw new PluginBindEmailError('link_failed', status, {
-        message: linkResult.result?.json?.error || DEFAULT_MESSAGES.link_failed,
+    function normalizeError(error) {
+      if (error instanceof PluginBindEmailError) return error
+      const message = error instanceof Error ? error.message : String(error)
+      return new PluginBindEmailError('bind_email_failed', 502, {
+        message,
+        originalError: error instanceof Error ? error : new Error(message),
       })
     }
 
-    const bindResult = await executeVlaCommand(
-      bus,
-      Events.VLA_COMMAND_NOTIFY_BIND_EMAIL,
-      { body: { username: mcUsername, email } },
-      { errorCode: 'bind_email_failed', defaultMessage: DEFAULT_MESSAGES.bind_timeout }
-    )
-    if (!bindResult.result?.skipped && !bindResult.ok) {
-      const status = bindResult.result?.status >= 400 && bindResult.result?.status < 600
-        ? bindResult.result.status
-        : 502
-      throw new PluginBindEmailError('bind_email_failed', status, {
-        message: bindResult.result?.json?.error || DEFAULT_MESSAGES.bind_email_failed,
-      })
-    }
+    try {
+      if (!store) {
+        throw new PluginBindEmailError('validation_error', 400, { message: '缺少 store' })
+      }
 
-    localUser.linkedMcUsername = mcUsername
-    localUser.linkedMcUuid = mcUuid || localUser.linkedMcUuid || null
-    markUserProfileDirty(localUser.id)
+      const email = String(body?.email || '').trim().toLowerCase()
+      const mcUsername = String(body?.username || '').trim()
+      const externalUserId = String(body?.external_user_id || '').trim()
+      const mcUuid = String(body?.uuid || '').trim() || null
+      const currentIp = String(body?.current_ip || body?.ip || '').trim() || null
 
-    appendSecurityAudit(store, localUser.id, 'plugin_bind_email', {
-      email,
-      mcUsername,
-      externalUserId: externalUserId || null,
-      previousMcUsername: prevLinked || null,
-      currentIp,
-      source: 'plugin_callback',
-    })
+      if (!isValidEmailAddress(email)) {
+        throw new PluginBindEmailError('invalid_email', 400)
+      }
+      if (!mcUsername || mcUsername.length < MIN_MC_USERNAME_LENGTH || mcUsername.length > MAX_MC_USERNAME_LENGTH) {
+        throw new PluginBindEmailError('validation_error', 400)
+      }
 
-    pushUserNotification(store, localUser.id, {
-      type: 'binding_changed',
-      title: created ? '已创建皮肤站账号并绑定角色' : '已绑定邮箱与游戏角色',
-      message: created
-        ? `已为 ${email} 创建网站账号，并绑定角色 ${mcUsername}`
-        : `邮箱 ${email} 已与角色 ${mcUsername} 绑定`,
-      detail: {
+      const existingByMc = findUserByLinkedMcUsername(store, mcUsername)
+      const { localUser, created } = await ensureSiteUserForPluginEmail(store, email)
+
+      if (existingByMc && String(existingByMc.id || '') !== String(localUser.id || '')) {
+        throw new PluginBindEmailError('mc_already_linked', 409, { linkedUserId: existingByMc.id })
+      }
+
+      const prevLinked = String(localUser.linkedMcUsername || '').trim()
+      if (prevLinked && prevLinked.toLowerCase() !== mcUsername.toLowerCase()) {
+        throw new PluginBindEmailError('email_already_linked', 409, { linkedMcUsername: prevLinked })
+      }
+
+      const linkResult = await executeVlaCommand(
+        bus,
+        Events.VLA_COMMAND_LINK_EXTERNAL_USER,
+        { body: { username: mcUsername, external_user_id: localUser.id } },
+        { errorCode: 'link_failed', defaultMessage: DEFAULT_MESSAGES.link_timeout }
+      )
+      if (!linkResult.result?.skipped && !linkResult.ok) {
+        const status = linkResult.result?.status >= 400 && linkResult.result?.status < 600
+          ? linkResult.result.status
+          : 502
+        throw new PluginBindEmailError('link_failed', status, {
+          message: linkResult.result?.json?.error || DEFAULT_MESSAGES.link_failed,
+        })
+      }
+
+      const bindResult = await executeVlaCommand(
+        bus,
+        Events.VLA_COMMAND_NOTIFY_BIND_EMAIL,
+        { body: { username: mcUsername, email } },
+        { errorCode: 'bind_email_failed', defaultMessage: DEFAULT_MESSAGES.bind_timeout }
+      )
+      if (!bindResult.result?.skipped && !bindResult.ok) {
+        const status = bindResult.result?.status >= 400 && bindResult.result?.status < 600
+          ? bindResult.result.status
+          : 502
+        throw new PluginBindEmailError('bind_email_failed', status, {
+          message: bindResult.result?.json?.error || DEFAULT_MESSAGES.bind_email_failed,
+        })
+      }
+
+      localUser.linkedMcUsername = mcUsername
+      localUser.linkedMcUuid = mcUuid || localUser.linkedMcUuid || null
+      markUserProfileDirty(localUser.id)
+
+      appendSecurityAudit(store, localUser.id, 'plugin_bind_email', {
         email,
         mcUsername,
-        created,
+        externalUserId: externalUserId || null,
+        previousMcUsername: prevLinked || null,
         currentIp,
-        action: 'plugin_bind_email',
-      },
-    })
+        source: 'plugin_callback',
+      })
 
-    scheduleSave()
+      pushUserNotification(store, localUser.id, {
+        type: 'binding_changed',
+        title: created ? '已创建皮肤站账号并绑定角色' : '已绑定邮箱与游戏角色',
+        message: created
+          ? `已为 ${email} 创建网站账号，并绑定角色 ${mcUsername}`
+          : `邮箱 ${email} 已与角色 ${mcUsername} 绑定`,
+        detail: {
+          email,
+          mcUsername,
+          created,
+          currentIp,
+          action: 'plugin_bind_email',
+        },
+      })
 
-    // 故意使用 fire-and-forget 发布，避免阻塞主处理流程
-    bus.publish(Events.USER_BIND_EMAIL_COMPLETED, {
-      store,
-      userId: localUser.id,
-      email,
-      mcUsername,
-      mcUuid: localUser.linkedMcUuid,
-      created,
-    })
+      scheduleSave()
+
+      bus.publish(Events.USER_BIND_EMAIL_COMPLETED, {
+        store,
+        userId: localUser.id,
+        email,
+        mcUsername,
+        mcUuid: localUser.linkedMcUuid,
+        created,
+      })
+
+      sendReply({
+        ok: true,
+        result: {
+          userId: localUser.id,
+          email,
+          mcUsername,
+          mcUuid: localUser.linkedMcUuid,
+          created,
+        },
+      })
+    } catch (error) {
+      const normalized = normalizeError(error)
+      sendReply({ ok: false, error: normalized })
+      throw normalized
+    }
   })
 }

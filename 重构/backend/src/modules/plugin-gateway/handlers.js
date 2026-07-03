@@ -111,15 +111,22 @@ export function createPluginGatewayHandlers(deps) {
 
     const { body } = result
 
-    eventBus.publish(Events.PLUGIN_BIND_EMAIL_RECEIVED, {
-      store: getStore(),
-      body,
-      meta: {
-        receivedAt: new Date().toISOString(),
-      },
-    })
-
-    return res.json({ ok: true, queued: true })
+    try {
+      const reply = await eventBus.publishAndWait(Events.PLUGIN_BIND_EMAIL_RECEIVED, {
+        store: getStore(),
+        body,
+        meta: {
+          receivedAt: new Date().toISOString(),
+        },
+      })
+      if (!reply.ok) {
+        const err = reply.error
+        return jsonErr(res, err.status || 400, err.message || '绑定失败', err.code || 'bind_email_failed', err.payload)
+      }
+      return res.json({ ok: true, ...reply.result })
+    } catch (err) {
+      return jsonErr(res, 502, '绑定处理失败', 'bind_email_failed', { reason: err.message })
+    }
   })
 
   return { callback, bindEmail }

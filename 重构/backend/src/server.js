@@ -117,6 +117,129 @@ function warnAuthxAdapterDeprecated() {
   console.warn('[starmc-api] authx adapter is deprecated, only vla is supported')
 }
 
+/**
+ * 将站点统一 Admin 契约映射到各插件实现（AuthX / VLA）。
+ */
+function mapPluginAdminRequest(apiPath, body) {
+  const isVla = config.authxPluginAdapter === 'vla'
+  if (!isVla) {
+    warnAuthxAdapterDeprecated()
+    return { path: apiPath, body: body || {}, extraHeaders: {} }
+  }
+  const extraHeaders = {}
+  if (config.authxVlaApiKey) {
+    extraHeaders['X-API-Key'] = config.authxVlaApiKey
+  }
+  if (apiPath.endsWith('/admin/reset-password')) {
+    const { username, newPassword } = body || {}
+    return {
+      path: '/v1/admin/password',
+      body: { username, password: newPassword },
+      extraHeaders
+    }
+  }
+  if (apiPath.endsWith('/admin/bind-email')) {
+    return { path: '/v1/admin/bind-email', body: body || {}, extraHeaders }
+  }
+  if (apiPath.endsWith('/admin/unbind-device')) {
+    const { username, device } = body || {}
+    return {
+      path: '/v1/admin/unbind-device',
+      body: { username, fingerprint: device == null ? '' : String(device) },
+      extraHeaders
+    }
+  }
+  if (apiPath === '/internal/v1/link/external-user') {
+    const { username, external_user_id: ext } = body || {}
+    return {
+      path: '/v1/link/external-user',
+      body: { username, external_user_id: ext },
+      extraHeaders
+    }
+  }
+  if (apiPath.endsWith('/admin/kick-online')) {
+    return { path: '/v1/admin/kick-online', body: body || {}, extraHeaders }
+  }
+  if (apiPath.endsWith('/admin/ban')) {
+    return { path: '/v1/admin/ban', body: body || {}, extraHeaders }
+  }
+  if (apiPath.endsWith('/admin/delete-user')) {
+    return { path: '/v1/admin/delete-user', body: body || {}, extraHeaders }
+  }
+  if (apiPath.endsWith('/admin/skin-refresh')) {
+    return { path: '/v1/skin/refresh', body: body || {}, extraHeaders }
+  }
+  if (apiPath.endsWith('/admin/link-external-user')) {
+    const { username, external_user_id: ext } = body || {}
+    return {
+      path: '/v1/link/external-user',
+      body: { username, external_user_id: ext },
+      extraHeaders
+    }
+  }
+  return { path: apiPath, body: body || {}, extraHeaders }
+}
+
+async function pluginFetchJson(apiPath, body) {
+  const mapped = mapPluginAdminRequest(apiPath, body)
+  const base = String(config.authxPluginBase || '').replace(/\/+$/, '')
+  const url = base + mapped.path
+  const payload = JSON.stringify(mapped.body || {})
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), config.authxPluginRequestMs)
+  try {
+    const headers = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      ...mapped.extraHeaders
+    }
+    if (
+      config.authxPluginAdapter === 'vla' &&
+      config.authxVlaHmacSecret
+    ) {
+      const ts = Math.floor(Date.now() / 1000).toString()
+      const sig = crypto
+        .createHmac('sha256', config.authxVlaHmacSecret)
+        .update(`${ts}\n${payload}`, 'utf8')
+        .digest('hex')
+      headers['X-VLA-Timestamp'] = ts
+      headers['X-VLA-Signature'] = sig
+    }
+    if (config.authxPluginAdapter !== 'vla' && config.authxAdminSecret) {
+      warnAuthxAdapterDeprecated()
+      headers['X-AuthX-Admin-Secret'] = config.authxAdminSecret
+    }
+    const r = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: payload,
+      signal: ctrl.signal
+    })
+    const text = await r.text()
+    let json = {}
+    if (text) {
+      try {
+        json = JSON.parse(text)
+      } catch {
+        json = { ok: false, error: 'invalid_json' }
+      }
+    }
+    return { status: r.status, json }
+  } catch (e) {
+    const aborted = e?.name === 'AbortError'
+    return {
+      status: aborted ? 504 : 502,
+      json: {
+        ok: false,
+        error: aborted ? 'plugin_timeout' : 'plugin_unreachable',
+        detail: String(e?.message || e)
+      }
+    }
+  } finally {
+    clearTimeout(t)
+  }
+}
+
 function jsonErr(res, status, message, code = 'error', details) {
   return sendJsonError(res, status, message, code, details)
 }
@@ -1229,15 +1352,46 @@ async function ensureSiteUserForPluginEmail(store, email) {
   return { localUser, stUser, created }
 }
 
-function createApiApp({ eventBus }) {
-  const app = express()
-  if (config.trustProxy) app.set('trust proxy', 1)
+/** 仅匹配已绑定的游戏名；站点昵称 username 不参与解析，避免与进服 ID 混淆 */
+function findUserByLinkedMcUsername(store, mcName) {
+  const q = String(mcName || '').trim()
+  if (!q) return null
+  const lower = q.toLowerCase()
+  return (
+    store.users.find((u) => {
+      const link = u.linkedMcUsername != null ? String(u.linkedMcUsername).trim() : ''
+      return link && link.toLowerCase() === lower
+    }) || null
+  )
+}
 
-  const logger = {
-    info: (...args) => console.info('[event-bus]', ...args),
-    warn: (...args) => console.warn('[event-bus]', ...args),
-    error: (...args) => console.error('[event-bus]', ...args),
-  }
+/**
+ * 集中注册所有事件总线订阅器。
+ *
+ * 在 main() 中于 createApiApp / createPluginApp 之前调用，
+ * 避免两个应用创建顺序影响 subscriber 是否已注册。
+ */
+function registerEventBusSubscribers(eventBus, deps) {
+  const {
+    logger,
+    pluginFetchJson,
+    failMcVerifySession,
+    completeMcVerifySession,
+    appendLoginEvent,
+    findUserByExternalUserId,
+    computeLoginRisk,
+    ensureSecurityCenter,
+    markUserProfileDirty,
+    scheduleSave,
+    markKvDirty,
+    isValidEmailAddress,
+    findUserByLinkedMcUsername,
+    ensureSiteUserForPluginEmail,
+    appendSecurityAudit,
+    appendSecurityAlert,
+    pushUserNotification,
+  } = deps
+
   registerVlaCommandSubscriber(eventBus, { pluginFetchJson, config, logger })
   registerAuthSubscriber(eventBus, {
     failMcVerifySession,
@@ -1267,6 +1421,11 @@ function createApiApp({ eventBus }) {
     pushUserNotification,
     scheduleSave,
   })
+}
+
+function createApiApp({ eventBus }) {
+  const app = express()
+  if (config.trustProxy) app.set('trust proxy', 1)
 
   initSuperTokens()
 
@@ -1833,129 +1992,6 @@ function createApiApp({ eventBus }) {
     }
   })
 
-  /**
-   * 将站点统一 Admin 契约映射到各插件实现（AuthX / VLA）。
-   */
-  function mapPluginAdminRequest(apiPath, body) {
-    const isVla = config.authxPluginAdapter === 'vla'
-    if (!isVla) {
-      warnAuthxAdapterDeprecated()
-      return { path: apiPath, body: body || {}, extraHeaders: {} }
-    }
-    const extraHeaders = {}
-    if (config.authxVlaApiKey) {
-      extraHeaders['X-API-Key'] = config.authxVlaApiKey
-    }
-    if (apiPath.endsWith('/admin/reset-password')) {
-      const { username, newPassword } = body || {}
-      return {
-        path: '/v1/admin/password',
-        body: { username, password: newPassword },
-        extraHeaders
-      }
-    }
-    if (apiPath.endsWith('/admin/bind-email')) {
-      return { path: '/v1/admin/bind-email', body: body || {}, extraHeaders }
-    }
-    if (apiPath.endsWith('/admin/unbind-device')) {
-      const { username, device } = body || {}
-      return {
-        path: '/v1/admin/unbind-device',
-        body: { username, fingerprint: device == null ? '' : String(device) },
-        extraHeaders
-      }
-    }
-    if (apiPath === '/internal/v1/link/external-user') {
-      const { username, external_user_id: ext } = body || {}
-      return {
-        path: '/v1/link/external-user',
-        body: { username, external_user_id: ext },
-        extraHeaders
-      }
-    }
-    if (apiPath.endsWith('/admin/kick-online')) {
-      return { path: '/v1/admin/kick-online', body: body || {}, extraHeaders }
-    }
-    if (apiPath.endsWith('/admin/ban')) {
-      return { path: '/v1/admin/ban', body: body || {}, extraHeaders }
-    }
-    if (apiPath.endsWith('/admin/delete-user')) {
-      return { path: '/v1/admin/delete-user', body: body || {}, extraHeaders }
-    }
-    if (apiPath.endsWith('/admin/skin-refresh')) {
-      return { path: '/v1/skin/refresh', body: body || {}, extraHeaders }
-    }
-    if (apiPath.endsWith('/admin/link-external-user')) {
-      const { username, external_user_id: ext } = body || {}
-      return {
-        path: '/v1/link/external-user',
-        body: { username, external_user_id: ext },
-        extraHeaders
-      }
-    }
-    return { path: apiPath, body: body || {}, extraHeaders }
-  }
-
-  async function pluginFetchJson(apiPath, body) {
-    const mapped = mapPluginAdminRequest(apiPath, body)
-    const base = String(config.authxPluginBase || '').replace(/\/+$/, '')
-    const url = base + mapped.path
-    const payload = JSON.stringify(mapped.body || {})
-    const ctrl = new AbortController()
-    const t = setTimeout(() => ctrl.abort(), config.authxPluginRequestMs)
-    try {
-      const headers = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        ...mapped.extraHeaders
-      }
-      if (
-        config.authxPluginAdapter === 'vla' &&
-        config.authxVlaHmacSecret
-      ) {
-        const ts = Math.floor(Date.now() / 1000).toString()
-        const sig = crypto
-          .createHmac('sha256', config.authxVlaHmacSecret)
-          .update(`${ts}\n${payload}`, 'utf8')
-          .digest('hex')
-        headers['X-VLA-Timestamp'] = ts
-        headers['X-VLA-Signature'] = sig
-      }
-      if (config.authxPluginAdapter !== 'vla' && config.authxAdminSecret) {
-        warnAuthxAdapterDeprecated()
-        headers['X-AuthX-Admin-Secret'] = config.authxAdminSecret
-      }
-      const r = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: payload,
-        signal: ctrl.signal
-      })
-      const text = await r.text()
-      let json = {}
-      if (text) {
-        try {
-          json = JSON.parse(text)
-        } catch {
-          json = { ok: false, error: 'invalid_json' }
-        }
-      }
-      return { status: r.status, json }
-    } catch (e) {
-      const aborted = e?.name === 'AbortError'
-      return {
-        status: aborted ? 504 : 502,
-        json: {
-          ok: false,
-          error: aborted ? 'plugin_timeout' : 'plugin_unreachable',
-          detail: String(e?.message || e)
-        }
-      }
-    } finally {
-      clearTimeout(t)
-    }
-  }
-
   function triggerVlaSkinRefreshIfConfigured(mcUsername) {
     if (!config.vlaNotifyOnSkinChange) return
     if (config.authxPluginAdapter !== 'vla') return
@@ -1967,19 +2003,6 @@ function createApiApp({ eventBus }) {
         err && err.message ? err.message : err
       )
     })
-  }
-
-  /** 仅匹配已绑定的游戏名；站点昵称 username 不参与解析，避免与进服 ID 混淆 */
-  function findUserByLinkedMcUsername(store, mcName) {
-    const q = String(mcName || '').trim()
-    if (!q) return null
-    const lower = q.toLowerCase()
-    return (
-      store.users.find((u) => {
-        const link = u.linkedMcUsername != null ? String(u.linkedMcUsername).trim() : ''
-        return link && link.toLowerCase() === lower
-      }) || null
-    )
   }
 
   /**
@@ -4406,6 +4429,26 @@ async function main() {
     error: (...args) => console.error('[event-bus]', ...args),
   }
   const eventBus = new EventBus(eventBusLogger)
+
+  registerEventBusSubscribers(eventBus, {
+    logger: eventBusLogger,
+    pluginFetchJson,
+    failMcVerifySession,
+    completeMcVerifySession,
+    appendLoginEvent,
+    findUserByExternalUserId,
+    computeLoginRisk,
+    ensureSecurityCenter,
+    markUserProfileDirty,
+    scheduleSave,
+    markKvDirty,
+    isValidEmailAddress,
+    findUserByLinkedMcUsername,
+    ensureSiteUserForPluginEmail,
+    appendSecurityAudit,
+    appendSecurityAlert,
+    pushUserNotification,
+  })
 
   const api = createApiApp({ eventBus })
   const serverApi = api.listen(config.apiPort, () => {
