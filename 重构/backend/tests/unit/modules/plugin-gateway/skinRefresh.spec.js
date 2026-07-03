@@ -25,6 +25,12 @@ function createReq(overrides = {}) {
   }
 }
 
+function createJsonErr() {
+  return (res, code, message, errCode) => {
+    res.status(code).json({ error: message, code: errCode })
+  }
+}
+
 describe('skinRefresh route', () => {
   let app
   let eventBus
@@ -67,12 +73,31 @@ describe('skinRefresh route', () => {
     assert.deepStrictEqual(publishedEvents[0].payload, { body: { username: 'Steve' } })
   })
 
+  it('accepts x-skinbridge-secret alias header (without hyphen)', async () => {
+    registerSkinRefreshRoutes(app, {
+      config: { pluginRefreshSecret: 'secret' },
+      jsonErr: () => {},
+      eventBus,
+    })
+
+    const req = createReq({
+      headers: { 'x-skinbridge-secret': 'secret' },
+      body: { username: 'Alex' },
+    })
+    const res = createRes()
+
+    await app.routes[0].handler(req, res)
+
+    assert.deepStrictEqual(res.body, { ok: true, queued: true })
+    assert.strictEqual(publishedEvents.length, 1)
+    assert.strictEqual(publishedEvents[0].event, Events.PLUGIN_SKIN_REFRESH_RECEIVED)
+    assert.deepStrictEqual(publishedEvents[0].payload, { body: { username: 'Alex' } })
+  })
+
   it('rejects unauthorized requests without publishing', async () => {
     registerSkinRefreshRoutes(app, {
       config: { pluginRefreshSecret: 'secret' },
-      jsonErr: (res, code, message, errCode) => {
-        res.status(code).json({ error: message, code: errCode })
-      },
+      jsonErr: createJsonErr(),
       eventBus,
     })
 
@@ -92,9 +117,7 @@ describe('skinRefresh route', () => {
   it('rejects misconfigured production requests without publishing', async () => {
     registerSkinRefreshRoutes(app, {
       config: { isProd: true, pluginRefreshSecret: '' },
-      jsonErr: (res, code, message, errCode) => {
-        res.status(code).json({ error: message, code: errCode })
-      },
+      jsonErr: createJsonErr(),
       eventBus,
     })
 
@@ -105,6 +128,46 @@ describe('skinRefresh route', () => {
 
     assert.strictEqual(res.statusCode, 503)
     assert.deepStrictEqual(res.body, { error: '生产环境必须配置 PLUGIN_REFRESH_SECRET', code: 'misconfigured' })
+    assert.strictEqual(publishedEvents.length, 0)
+  })
+
+  it('rejects requests with a body but missing username', async () => {
+    registerSkinRefreshRoutes(app, {
+      config: { pluginRefreshSecret: 'secret' },
+      jsonErr: createJsonErr(),
+      eventBus,
+    })
+
+    const req = createReq({
+      headers: { 'x-skin-bridge-secret': 'secret' },
+      body: { unknown: 'field' },
+    })
+    const res = createRes()
+
+    await app.routes[0].handler(req, res)
+
+    assert.strictEqual(res.statusCode, 400)
+    assert.deepStrictEqual(res.body, { error: '缺少 username', code: 'validation_error' })
+    assert.strictEqual(publishedEvents.length, 0)
+  })
+
+  it('rejects non-object req.body', async () => {
+    registerSkinRefreshRoutes(app, {
+      config: { pluginRefreshSecret: 'secret' },
+      jsonErr: createJsonErr(),
+      eventBus,
+    })
+
+    const req = createReq({
+      headers: { 'x-skin-bridge-secret': 'secret' },
+      body: 'just-a-string',
+    })
+    const res = createRes()
+
+    await app.routes[0].handler(req, res)
+
+    assert.strictEqual(res.statusCode, 400)
+    assert.deepStrictEqual(res.body, { error: '缺少 username', code: 'validation_error' })
     assert.strictEqual(publishedEvents.length, 0)
   })
 

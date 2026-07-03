@@ -1,5 +1,9 @@
 import { Events } from '../events.js'
 
+function isPlainObject(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 /**
  * 注册皮肤刷新事件订阅器。
  *
@@ -12,7 +16,18 @@ import { Events } from '../events.js'
 export function registerSkinRefreshSubscriber(bus, deps) {
   const { logger = console } = deps
 
-  bus.subscribe(Events.PLUGIN_SKIN_REFRESH_RECEIVED, async ({ body }) => {
+  bus.subscribe(Events.PLUGIN_SKIN_REFRESH_RECEIVED, async (payload) => {
+    if (!isPlainObject(payload)) {
+      logger.warn?.('[skin-refresh-subscriber] invalid payload shape, expected object', { payload })
+      return
+    }
+
+    const body = payload.body
+    if (body !== undefined && body !== null && !isPlainObject(body)) {
+      logger.warn?.('[skin-refresh-subscriber] invalid body shape, expected object', { body })
+      return
+    }
+
     logger.debug?.('[skin-refresh-subscriber] forwarding skin refresh to VLA command', { body })
     bus.publish(Events.VLA_COMMAND_SKIN_REFRESH, { body: body || {} })
   })
