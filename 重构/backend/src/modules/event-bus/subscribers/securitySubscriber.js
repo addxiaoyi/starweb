@@ -11,9 +11,10 @@ import { Events } from '../events.js'
  * @param {Function} deps.appendSecurityAudit
  * @param {Function} deps.appendSecurityAlert
  * @param {Function} deps.pushUserNotification
+ * @param {Function} deps.scheduleSave
  */
 export function registerSecuritySubscriber(bus, deps) {
-  const { appendSecurityAudit, appendSecurityAlert, pushUserNotification } = deps
+  const { appendSecurityAudit, appendSecurityAlert, pushUserNotification, scheduleSave } = deps
 
   bus.subscribe(Events.AUTH_LOGIN_SUCCESS, (payload) => {
     const { store, loginRow } = payload || {}
@@ -31,6 +32,7 @@ export function registerSecuritySubscriber(bus, deps) {
       externalUserId: loginRow.externalUserId,
       source: 'plugin_callback',
     })
+    scheduleSave()
   })
 
   bus.subscribe(Events.AUTH_VERIFY_COMPLETED, (payload) => {
@@ -47,6 +49,7 @@ export function registerSecuritySubscriber(bus, deps) {
         source: 'plugin_callback',
       },
     })
+    scheduleSave()
   })
 
   bus.subscribe(Events.AUTH_VERIFY_FAILED, (payload) => {
@@ -64,6 +67,7 @@ export function registerSecuritySubscriber(bus, deps) {
         source: 'plugin_callback',
       },
     })
+    scheduleSave()
   })
 
   bus.subscribe(Events.SECURITY_ALERT_RAISED, (payload) => {
@@ -76,6 +80,7 @@ export function registerSecuritySubscriber(bus, deps) {
       `登录安全告警：${alertPayload.type || 'unknown'}`,
       alertPayload
     )
+    scheduleSave()
   })
 
   bus.subscribe(Events.USER_BIND_EMAIL_COMPLETED, (payload) => {
@@ -88,5 +93,6 @@ export function registerSecuritySubscriber(bus, deps) {
       created,
       source: 'plugin_callback',
     })
+    scheduleSave()
   })
 }

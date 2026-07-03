@@ -1,8 +1,5 @@
 import { Events } from '../events.js'
-
-function isPlainObject(value) {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
+import { isPlainObject } from '../utils.js'
 
 /**
  * 注册皮肤刷新事件订阅器。

@@ -1,9 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { Events } from '../events.js'
-
-function isPlainObject(value) {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
+import { isPlainObject } from '../utils.js'
 
 function findUserByLinkedMcUsername(store, mcUsername) {
   const needle = String(mcUsername || '').trim().toLowerCase()
@@ -88,7 +85,7 @@ async function handleVerifyPremium(bus, deps, store, body) {
       retryCount: Number(completeResult.session?.retries || 0),
       maxRetries: Number(completeResult.session?.maxRetries || 0),
     }
-    logger.info(`[starmc-api] 正版验证完成：${mcUsername} (uuid=${mojangUuid})，用户=${u.id}`)
+    logger.info?.(`[starmc-api] 正版验证完成：${mcUsername} (uuid=${mojangUuid})，用户=${u.id}`)
     bus.publish(Events.AUTH_VERIFY_COMPLETED, {
       store,
       userId: u.id,
@@ -220,23 +217,23 @@ export function registerAuthSubscriber(bus, deps) {
 
   bus.subscribe(Events.PLUGIN_CALLBACK_RECEIVED, async (payload) => {
     if (!isPlainObject(payload)) {
-      logger.warn('[auth-subscriber] invalid payload shape, expected plain object', { payload })
+      logger.warn?.('[auth-subscriber] invalid payload shape, expected plain object', { payload })
       return
     }
 
     const { store, body, meta } = payload
     if (!store) {
-      logger.warn('[auth-subscriber] invalid payload: store is required', { payload })
+      logger.warn?.('[auth-subscriber] invalid payload: store is required', { payload })
       return
     }
     if (!isPlainObject(body)) {
-      logger.warn('[auth-subscriber] invalid body shape, expected plain object', { body })
+      logger.warn?.('[auth-subscriber] invalid body shape, expected plain object', { body })
       return
     }
 
     const event = String(body.event || '').trim()
     if (!event) {
-      logger.warn('[auth-subscriber] invalid body: event must be a non-empty string', { body })
+      logger.warn?.('[auth-subscriber] invalid body: event must be a non-empty string', { body })
       return
     }
 
@@ -262,5 +259,3 @@ export function registerAuthSubscriber(bus, deps) {
     }
   })
 }
-
-export { buildCallbackRecord }

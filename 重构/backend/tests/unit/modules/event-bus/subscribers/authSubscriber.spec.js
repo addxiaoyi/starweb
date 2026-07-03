@@ -1,7 +1,7 @@
 import assert from 'node:assert'
 import { describe, it, beforeEach } from 'node:test'
 import { EventBus, Events } from '../../../../../src/modules/event-bus/index.js'
-import { registerAuthSubscriber, buildCallbackRecord } from '../../../../../src/modules/event-bus/subscribers/authSubscriber.js'
+import { registerAuthSubscriber } from '../../../../../src/modules/event-bus/subscribers/authSubscriber.js'
 
 function createStore(overrides = {}) {
   return {
@@ -123,8 +123,8 @@ describe('authSubscriber', () => {
     registerAuthSubscriber(bus, deps)
   })
 
-  it('builds callback record preserving fields', () => {
-    const record = buildCallbackRecord(store, {
+  it('records callback preserving fields into store.authxEvents', async () => {
+    publishCallback(bus, store, {
       event: 'login_success',
       username: 'Steve',
       uuid: 'uuid-1',
@@ -141,6 +141,10 @@ describe('authSubscriber', () => {
       receivedAt: '2026-01-01T00:00:00.000Z',
     })
 
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.strictEqual(store.authxEvents.length, 1)
+    const record = store.authxEvents[0]
     assert.strictEqual(record.event, 'login_success')
     assert.strictEqual(record.username, 'Steve')
     assert.strictEqual(record.uuid, 'uuid-1')
@@ -375,6 +379,40 @@ describe('authSubscriber', () => {
     assert.strictEqual(event.alertPayload.deviceProfile, 'new_device')
   })
 
+  it('security_alert falls back to username match when external_user_id is empty', async () => {
+    const alertPromise = waitForEvent(bus, Events.SECURITY_ALERT_RAISED)
+
+    publishCallback(bus, store, {
+      event: 'security_alert',
+      username: 'Steve',
+      external_user_id: '',
+      type: 'impossible_travel',
+    })
+
+    const event = await alertPromise
+
+    assert.strictEqual(event.targetUserId, 'user-1')
+    assert.strictEqual(event.alertPayload.externalUserId, null)
+  })
+
+  it('security_alert falls back to anonymous when neither external_user_id nor username matches', async () => {
+    const alertPromise = waitForEvent(bus, Events.SECURITY_ALERT_RAISED)
+
+    store = createStore({ users: [] })
+
+    publishCallback(bus, store, {
+      event: 'security_alert',
+      username: 'NotSteve',
+      external_user_id: '',
+      type: 'impossible_travel',
+    })
+
+    const event = await alertPromise
+
+    assert.strictEqual(event.targetUserId, 'anonymous')
+    assert.strictEqual(event.alertPayload.externalUserId, null)
+  })
+
   it('verify_premium with verified=false triggers failMcVerifySession and publishes AUTH_VERIFY_FAILED', async () => {
     const failedPromise = waitForEvent(bus, Events.AUTH_VERIFY_FAILED)
 
@@ -395,7 +433,7 @@ describe('authSubscriber', () => {
     assert.strictEqual(event.auditDetail.conflictCode, 'callback_not_verified')
   })
 
-  it('completeMcVerifySession returning ok=false publishes AUTH_VERIFY_FAILED without reason', async () => {
+  it('completeMcVerifySession returning ok=false publishes AUTH_VERIFY_FAILED with verify_callback_conflict reason', async () => {
     const localCalls = { completeMcVerifySession: [] }
     const localDeps = makeDeps({
       completeMcVerifySession: (userId, mojangUuid, options) => {
