@@ -1,4 +1,5 @@
 import { asyncHandler } from '../../middleware/error.js'
+import { Events } from '../event-bus/events.js'
 import {
   normalizeProxyStatus,
   respondPluginJson,
@@ -9,12 +10,12 @@ export function registerAuthxAdminRoutes(app, deps) {
   const {
     requireDevAdmin,
     pluginFetchHealth,
-    pluginFetchJson,
     pluginFetchGet,
     config,
     adminPluginGetLimiter,
     jsonErr,
-    jsonOk
+    jsonOk,
+    eventBus
   } = deps
   const okResponse = typeof jsonOk === 'function'
     ? jsonOk
@@ -39,33 +40,6 @@ export function registerAuthxAdminRoutes(app, deps) {
       },
       plugin: probe
     })
-  }))
-
-  app.post('/api/admin/authx/reset-password', asyncHandler(async (req, res) => {
-    if (!requireDevAdmin(req, res)) return
-    const { username, newPassword } = req.body || {}
-    const r = await pluginFetchJson('/api/plugin/authx/admin/reset-password', { username, newPassword })
-    return respondPluginJson(res, r)
-  }))
-
-  app.post('/api/admin/authx/bind-email', asyncHandler(async (req, res) => {
-    if (!requireDevAdmin(req, res)) return
-    const { username, email } = req.body || {}
-    const r = await pluginFetchJson('/api/plugin/authx/admin/bind-email', { username, email })
-    return respondPluginJson(res, r)
-  }))
-
-  app.post('/api/admin/authx/unbind-device', asyncHandler(async (req, res) => {
-    if (!requireDevAdmin(req, res)) return
-    const { username, device } = req.body || {}
-    const r = await pluginFetchJson('/api/plugin/authx/admin/unbind-device', { username, device })
-    return respondPluginJson(res, r)
-  }))
-
-  app.post('/api/admin/authx/kick-online', asyncHandler(async (req, res) => {
-    if (!requireDevAdmin(req, res)) return
-    const r = await pluginFetchJson('/api/plugin/authx/admin/kick-online', req.body || {})
-    return respondPluginJson(res, r)
   }))
 
   app.get('/api/admin/authx/plugin-metrics', asyncHandler(async (req, res) => {
@@ -114,27 +88,78 @@ export function registerAuthxAdminRoutes(app, deps) {
     })
   )
 
+  app.post('/api/admin/authx/reset-password', asyncHandler(async (req, res) => {
+    if (!requireDevAdmin(req, res)) return
+    const { username, newPassword } = req.body || {}
+    const result = await eventBus.publishAndWait(
+      Events.VLA_COMMAND_RESET_PASSWORD,
+      { body: { username, newPassword } }
+    )
+    return respondPluginJson(res, result?.result ?? result)
+  }))
+
+  app.post('/api/admin/authx/bind-email', asyncHandler(async (req, res) => {
+    if (!requireDevAdmin(req, res)) return
+    const { username, email } = req.body || {}
+    const result = await eventBus.publishAndWait(
+      Events.VLA_COMMAND_BIND_EMAIL,
+      { body: { username, email } }
+    )
+    return respondPluginJson(res, result?.result ?? result)
+  }))
+
+  app.post('/api/admin/authx/unbind-device', asyncHandler(async (req, res) => {
+    if (!requireDevAdmin(req, res)) return
+    const { username, device } = req.body || {}
+    const result = await eventBus.publishAndWait(
+      Events.VLA_COMMAND_UNBIND_DEVICE,
+      { body: { username, device } }
+    )
+    return respondPluginJson(res, result?.result ?? result)
+  }))
+
+  app.post('/api/admin/authx/kick-online', asyncHandler(async (req, res) => {
+    if (!requireDevAdmin(req, res)) return
+    const result = await eventBus.publishAndWait(
+      Events.VLA_COMMAND_KICK_ONLINE,
+      { body: req.body || {} }
+    )
+    return respondPluginJson(res, result?.result ?? result)
+  }))
+
   app.post('/api/admin/authx/ban', asyncHandler(async (req, res) => {
     if (!requireDevAdmin(req, res)) return
-    const r = await pluginFetchJson('/api/plugin/authx/admin/ban', req.body || {})
-    return respondPluginJson(res, r)
+    const result = await eventBus.publishAndWait(
+      Events.VLA_COMMAND_BAN,
+      { body: req.body || {} }
+    )
+    return respondPluginJson(res, result?.result ?? result)
   }))
 
   app.post('/api/admin/authx/delete-user', asyncHandler(async (req, res) => {
     if (!requireDevAdmin(req, res)) return
-    const r = await pluginFetchJson('/api/plugin/authx/admin/delete-user', req.body || {})
-    return respondPluginJson(res, r)
+    const result = await eventBus.publishAndWait(
+      Events.VLA_COMMAND_DELETE_USER,
+      { body: req.body || {} }
+    )
+    return respondPluginJson(res, result?.result ?? result)
   }))
 
   app.post('/api/admin/authx/skin-refresh', asyncHandler(async (req, res) => {
     if (!requireDevAdmin(req, res)) return
-    const r = await pluginFetchJson('/api/plugin/authx/admin/skin-refresh', req.body || {})
-    return respondPluginJson(res, r)
+    const result = await eventBus.publishAndWait(
+      Events.VLA_COMMAND_SKIN_REFRESH,
+      { body: req.body || {} }
+    )
+    return respondPluginJson(res, result?.result ?? result)
   }))
 
   app.post('/api/admin/authx/link-external-user', asyncHandler(async (req, res) => {
     if (!requireDevAdmin(req, res)) return
-    const r = await pluginFetchJson('/api/plugin/authx/admin/link-external-user', req.body || {})
-    return respondPluginJson(res, r)
+    const result = await eventBus.publishAndWait(
+      Events.VLA_COMMAND_LINK_EXTERNAL_USER,
+      { body: req.body || {} }
+    )
+    return respondPluginJson(res, result?.result ?? result)
   }))
 }
