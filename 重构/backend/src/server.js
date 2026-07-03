@@ -1229,9 +1229,7 @@ async function ensureSiteUserForPluginEmail(store, email) {
   return { localUser, stUser, created }
 }
 
-let eventBus
-
-function createApiApp() {
+function createApiApp({ eventBus }) {
   const app = express()
   if (config.trustProxy) app.set('trust proxy', 1)
 
@@ -1240,7 +1238,6 @@ function createApiApp() {
     warn: (...args) => console.warn('[event-bus]', ...args),
     error: (...args) => console.error('[event-bus]', ...args),
   }
-  eventBus = new EventBus(logger)
   registerVlaCommandSubscriber(eventBus, { pluginFetchJson, config, logger })
   registerAuthSubscriber(eventBus, {
     failMcVerifySession,
@@ -4280,7 +4277,7 @@ function createApiApp() {
   return app
 }
 
-function createPluginApp() {
+function createPluginApp({ eventBus }) {
   const app = express()
   const corsOpts =
     config.corsOrigins.length > 0
@@ -4403,7 +4400,14 @@ async function main() {
     }
   }
 
-  const api = createApiApp()
+  const eventBusLogger = {
+    info: (...args) => console.info('[event-bus]', ...args),
+    warn: (...args) => console.warn('[event-bus]', ...args),
+    error: (...args) => console.error('[event-bus]', ...args),
+  }
+  const eventBus = new EventBus(eventBusLogger)
+
+  const api = createApiApp({ eventBus })
   const serverApi = api.listen(config.apiPort, () => {
     console.log(`[starmc-api] API  http://127.0.0.1:${config.apiPort}`)
     console.log(`[starmc-api] 健康检查 GET http://127.0.0.1:${config.apiPort}/api/health`)
@@ -4413,7 +4417,7 @@ async function main() {
     process.exit(1)
   })
 
-  const plugin = createPluginApp()
+  const plugin = createPluginApp({ eventBus })
   const serverPlugin = plugin.listen(config.pluginPort, () => {
     console.log(
       `[starmc-api] 插件桩 http://127.0.0.1:${config.pluginPort}  (/healthz, /plugin/skin/refresh)`

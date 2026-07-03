@@ -7,6 +7,7 @@ import { registerAuthSubscriber } from '../../src/modules/event-bus/subscribers/
 import { registerBindEmailSubscriber } from '../../src/modules/event-bus/subscribers/bindEmailSubscriber.js'
 import { registerSkinRefreshSubscriber } from '../../src/modules/event-bus/subscribers/skinRefreshSubscriber.js'
 import { registerSecuritySubscriber } from '../../src/modules/event-bus/subscribers/securitySubscriber.js'
+import { PluginBindEmailError } from '../../src/modules/plugin-gateway/bindEmailService.js'
 
 function createMockStore() {
   return { users: [] }
@@ -26,6 +27,7 @@ function createTrackedCalls() {
     appendSecurityAudit: [],
     appendLoginEvent: [],
     pushUserNotification: [],
+    isValidEmailAddress: [],
     scheduleSave: 0,
     markKvDirty: 0,
     markUserProfileDirty: 0,
@@ -36,11 +38,9 @@ function createDependencies(calls) {
   return {
     appendLoginEvent(store, body) {
       const row = {
-        userId: 'anonymous',
+        userId: 'u123',
         username: String(body?.username || ''),
-        method: String(body?.method || 'unknown'),
-        ip: String(body?.current_ip || body?.ip || ''),
-        uuid: String(body?.uuid || '').trim() || null,
+        uuid: 'abc',
       }
       calls.appendLoginEvent.push({ store, body, row })
       return row
@@ -87,6 +87,7 @@ function createDependencies(calls) {
       return store.securityCenter
     },
     isValidEmailAddress(email) {
+      calls.isValidEmailAddress.push(email)
       return /^[^\s@]+@[^\s@.]+\.[^\s@.]+$/.test(String(email || ''))
     },
     findUserByLinkedMcUsername() {
@@ -105,10 +106,10 @@ function createDependencies(calls) {
   }
 }
 
-function setupEventBus() {
+function setupEventBus(configOverrides = {}) {
   const logger = createMockLogger()
   const bus = new EventBus(logger)
-  const config = { authxPluginAdapter: 'authx' }
+  const config = { authxPluginAdapter: 'authx', ...configOverrides }
   const pluginFetchJson = async () => ({ status: 200, json: { ok: true } })
   const calls = createTrackedCalls()
   const deps = createDependencies(calls)
@@ -128,26 +129,35 @@ function waitForEvent(bus, event) {
   })
 }
 
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 test('PLUGIN_CALLBACK_RECEIVED login_success emits AUTH_LOGIN_SUCCESS and writes security audit', async () => {
   const { bus, calls } = setupEventBus()
   const store = createMockStore()
   const received = waitForEvent(bus, Events.AUTH_LOGIN_SUCCESS)
+  const body = {
+    event: 'login_success',
+    username: 'Steve',
+    method: 'premium',
+    current_ip: '1.2.3.4',
+  }
 
-  bus.publish(Events.PLUGIN_CALLBACK_RECEIVED, {
-    store,
-    body: {
-      event: 'login_success',
-      username: 'Steve',
-      method: 'premium',
-      current_ip: '1.2.3.4',
-    },
-    meta: {},
-  })
+  bus.publish(Events.PLUGIN_CALLBACK_RECEIVED, { store, body })
 
   const payload = await received
   assert.ok(payload, 'AUTH_LOGIN_SUCCESS should be published')
-  assert.equal(payload.loginRow.username, 'Steve')
-  assert.ok(calls.appendSecurityAudit.some((x) => x.action === 'login_success'))
+  assert.deepEqual(payload.loginRow, { userId: 'u123', username: 'Steve', uuid: 'abc' })
+  assert.equal(calls.appendLoginEvent.length, 1)
+  assert.equal(calls.appendLoginEvent[0].store, store)
+  assert.equal(calls.appendLoginEvent[0].body, body)
+  assert.equal(calls.appendSecurityAudit.length, 1)
+  assert.equal(calls.appendSecurityAudit[0].store, store)
+  assert.equal(calls.appendSecurityAudit[0].userId, 'u123')
+  assert.equal(calls.appendSecurityAudit[0].action, 'login_success')
+  assert.equal(calls.appendSecurityAudit[0].detail.username, 'Steve')
+  assert.equal(calls.appendSecurityAudit[0].detail.uuid, 'abc')
 })
 
 test('PLUGIN_BIND_EMAIL_RECEIVED triggers VLA link/bind commands and completion', async () => {
@@ -158,28 +168,29 @@ test('PLUGIN_BIND_EMAIL_RECEIVED triggers VLA link/bind commands and completion'
   bus.subscribe(Events.VLA_COMMAND_COMPLETED, (payload) => {
     commands.push(payload?.command)
   })
+  const body = {
+    username: 'Steve',
+    email: 'steve@example.com',
+    external_user_id: 'ex1',
+  }
 
-  bus.publish(Events.PLUGIN_BIND_EMAIL_RECEIVED, {
-    store,
-    body: {
-      username: 'Steve',
-      email: 'steve@example.com',
-      external_user_id: 'ex1',
-    },
-    meta: {},
-  })
+  bus.publish(Events.PLUGIN_BIND_EMAIL_RECEIVED, { store, body })
 
   const result = await completed
-  assert.ok(commands.includes(Events.VLA_COMMAND_LINK_EXTERNAL_USER))
-  assert.ok(commands.includes(Events.VLA_COMMAND_NOTIFY_BIND_EMAIL))
+  assert.equal(commands.filter((c) => c === Events.VLA_COMMAND_LINK_EXTERNAL_USER).length, 1)
+  assert.equal(commands.filter((c) => c === Events.VLA_COMMAND_NOTIFY_BIND_EMAIL).length, 1)
   assert.equal(result.email, 'steve@example.com')
   assert.equal(result.mcUsername, 'Steve')
-  assert.ok(calls.appendSecurityAudit.some((x) => x.action === 'plugin_bind_email'))
+  assert.equal(calls.isValidEmailAddress.length, 1)
+  assert.equal(calls.isValidEmailAddress[0], 'steve@example.com')
+  assert.ok(
+    calls.appendSecurityAudit.some((x) => x.action === 'plugin_bind_email'),
+    'security audit for plugin_bind_email should be recorded'
+  )
 })
 
 test('PLUGIN_SKIN_REFRESH_RECEIVED forwards to VLA_COMMAND_SKIN_REFRESH', async () => {
   const { bus } = setupEventBus()
-  const store = createMockStore()
   const skinRefresh = waitForEvent(bus, Events.VLA_COMMAND_SKIN_REFRESH)
   const completed = waitForEvent(bus, Events.VLA_COMMAND_COMPLETED)
   const commands = []
@@ -187,14 +198,53 @@ test('PLUGIN_SKIN_REFRESH_RECEIVED forwards to VLA_COMMAND_SKIN_REFRESH', async 
     commands.push(payload?.command)
   })
 
-  bus.publish(Events.PLUGIN_SKIN_REFRESH_RECEIVED, {
-    store,
-    body: { username: 'Steve' },
-    meta: {},
-  })
+  bus.publish(Events.PLUGIN_SKIN_REFRESH_RECEIVED, { body: { username: 'Steve' } })
 
   const forwarded = await skinRefresh
   await completed
   assert.deepEqual(forwarded.body, { username: 'Steve' })
-  assert.ok(commands.includes(Events.VLA_COMMAND_SKIN_REFRESH))
+  assert.equal(commands.filter((c) => c === Events.VLA_COMMAND_SKIN_REFRESH).length, 1)
+})
+
+test('PLUGIN_CALLBACK_RECEIVED with null payload does not publish domain events or crash', async () => {
+  const { bus } = setupEventBus()
+  let fired = false
+  bus.subscribe(Events.AUTH_LOGIN_SUCCESS, () => {
+    fired = true
+  })
+  bus.subscribe(Events.AUTH_VERIFY_COMPLETED, () => {
+    fired = true
+  })
+  bus.subscribe(Events.SECURITY_ALERT_RAISED, () => {
+    fired = true
+  })
+
+  bus.publish(Events.PLUGIN_CALLBACK_RECEIVED, null)
+
+  await waitMs(50)
+  assert.equal(fired, false)
+})
+
+test('PLUGIN_BIND_EMAIL_RECEIVED with invalid email emits PluginBindEmailError via EVENT_HANDLER_FAILED', async () => {
+  const { bus } = setupEventBus()
+  const store = createMockStore()
+  const failed = waitForEvent(bus, Events.EVENT_HANDLER_FAILED)
+
+  bus.publish(Events.PLUGIN_BIND_EMAIL_RECEIVED, {
+    store,
+    body: { username: 'Steve', email: 'not-an-email' },
+  })
+
+  const payload = await failed
+  assert.ok(payload.error instanceof PluginBindEmailError)
+  assert.equal(payload.error.code, 'invalid_email')
+})
+
+test('VLA command is skipped when authxPluginAdapter is not vla', async () => {
+  const { bus } = setupEventBus({ authxPluginAdapter: 'authx' })
+  const result = await bus.publishAndWait(Events.VLA_COMMAND_SKIN_REFRESH, {
+    body: { username: 'Steve' },
+  })
+  assert.equal(result.ok, true)
+  assert.equal(result.result.skipped, true)
 })
