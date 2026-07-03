@@ -243,4 +243,97 @@ describe('authxAdmin routes', () => {
       assert.deepStrictEqual(res.body, { ok: true, success: true, banned: true })
     })
   })
+
+  describe('POST /api/admin/authx/delete-user', () => {
+    it('publishes VLA_COMMAND_DELETE_USER with full request body and does not call pluginFetchJson', async () => {
+      const eventBus = createMockEventBus({
+        ok: true,
+        result: { status: 200, json: { ok: true, deleted: true } },
+      })
+      const pluginFetchJsonCalls = []
+      const app = createAppStub()
+      const deps = createDeps({
+        eventBus,
+        pluginFetchJson: async (...args) => {
+          pluginFetchJsonCalls.push(args)
+          throw new Error('pluginFetchJson should not be called for POST routes')
+        },
+      })
+      registerAuthxAdminRoutes(app, deps)
+
+      const res = createMockRes()
+      const req = { body: { username: 'Steve' } }
+      await getHandler(app, 'POST', '/api/admin/authx/delete-user')(req, res)
+
+      assert.strictEqual(eventBus.calls.length, 1)
+      const call = eventBus.calls[0]
+      assert.strictEqual(call.event, Events.VLA_COMMAND_DELETE_USER)
+      assert.deepStrictEqual(call.payload.body, { username: 'Steve' })
+      assert.strictEqual(pluginFetchJsonCalls.length, 0)
+      assert.strictEqual(res.statusCode, 200)
+      assert.deepStrictEqual(res.body, { ok: true, success: true, deleted: true })
+    })
+  })
+
+  describe('POST /api/admin/authx/skin-refresh', () => {
+    it('publishes VLA_COMMAND_SKIN_REFRESH with full request body and does not call pluginFetchJson', async () => {
+      const eventBus = createMockEventBus({
+        ok: true,
+        result: { status: 200, json: { ok: true, refreshed: true } },
+      })
+      const pluginFetchJsonCalls = []
+      const app = createAppStub()
+      const deps = createDeps({
+        eventBus,
+        pluginFetchJson: async (...args) => {
+          pluginFetchJsonCalls.push(args)
+          throw new Error('pluginFetchJson should not be called for POST routes')
+        },
+      })
+      registerAuthxAdminRoutes(app, deps)
+
+      const res = createMockRes()
+      const req = { body: { username: 'Steve', uuid: 'abc-123' } }
+      await getHandler(app, 'POST', '/api/admin/authx/skin-refresh')(req, res)
+
+      assert.strictEqual(eventBus.calls.length, 1)
+      const call = eventBus.calls[0]
+      assert.strictEqual(call.event, Events.VLA_COMMAND_SKIN_REFRESH)
+      assert.deepStrictEqual(call.payload.body, { username: 'Steve', uuid: 'abc-123' })
+      assert.strictEqual(pluginFetchJsonCalls.length, 0)
+      assert.strictEqual(res.statusCode, 200)
+      assert.deepStrictEqual(res.body, { ok: true, success: true, refreshed: true })
+    })
+  })
+
+  describe('POST /api/admin/authx/link-external-user', () => {
+    it('publishes VLA_COMMAND_LINK_EXTERNAL_USER with full request body and does not call pluginFetchJson', async () => {
+      const eventBus = createMockEventBus({
+        ok: true,
+        result: { status: 200, json: { ok: true, linked: true } },
+      })
+      const pluginFetchJsonCalls = []
+      const app = createAppStub()
+      const deps = createDeps({
+        eventBus,
+        pluginFetchJson: async (...args) => {
+          pluginFetchJsonCalls.push(args)
+          throw new Error('pluginFetchJson should not be called for POST routes')
+        },
+      })
+      registerAuthxAdminRoutes(app, deps)
+
+      const res = createMockRes()
+      const req = { body: { username: 'Steve', externalId: 'ext-123' } }
+      await getHandler(app, 'POST', '/api/admin/authx/link-external-user')(req, res)
+
+      assert.strictEqual(eventBus.calls.length, 1)
+      const call = eventBus.calls[0]
+      assert.strictEqual(call.event, Events.VLA_COMMAND_LINK_EXTERNAL_USER)
+      assert.deepStrictEqual(call.payload.body, { username: 'Steve', externalId: 'ext-123' })
+      assert.strictEqual(pluginFetchJsonCalls.length, 0)
+      assert.strictEqual(res.statusCode, 200)
+      assert.deepStrictEqual(res.body, { ok: true, success: true, linked: true })
+    })
+  })
 })
