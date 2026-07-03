@@ -22,10 +22,6 @@ function verifySkinRefreshSecret(req, res, config, jsonErr) {
   return true
 }
 
-function hasProvidedBody(body) {
-  return body !== undefined && body !== null
-}
-
 /**
  * POST /plugin/skin/refresh
  *
@@ -45,16 +41,13 @@ export function registerSkinRefreshRoutes(app, deps) {
   app.post('/plugin/skin/refresh', asyncHandler(async (req, res) => {
     if (!verifySkinRefreshSecret(req, res, config, jsonErr)) return
 
-    const body = req.body
-    if (hasProvidedBody(body)) {
-      const isObject = typeof body === 'object' && !Array.isArray(body)
-      const hasFields = isObject && Object.keys(body).length > 0
-      if (!isObject || (hasFields && !body.username)) {
-        return jsonErr(res, 400, '缺少 username', 'validation_error')
-      }
+    const body = req.body || {}
+    const username = String(body.username || '').trim()
+    if (!username) {
+      return jsonErr(res, 400, '缺少 username', 'validation_error')
     }
 
-    eventBus.publish(Events.PLUGIN_SKIN_REFRESH_RECEIVED, { body: body || {} })
+    eventBus.publish(Events.PLUGIN_SKIN_REFRESH_RECEIVED, { body })
     return res.json({ ok: true, queued: true })
   }))
 }

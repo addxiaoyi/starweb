@@ -171,10 +171,10 @@ describe('skinRefresh route', () => {
     assert.strictEqual(publishedEvents.length, 0)
   })
 
-  it('defaults body to empty object when req.body is missing', async () => {
+  it('rejects request when req.body is missing', async () => {
     registerSkinRefreshRoutes(app, {
       config: {},
-      jsonErr: () => {},
+      jsonErr: createJsonErr(),
       eventBus,
     })
 
@@ -183,8 +183,28 @@ describe('skinRefresh route', () => {
 
     await app.routes[0].handler(req, res)
 
-    assert.deepStrictEqual(res.body, { ok: true, queued: true })
-    assert.strictEqual(publishedEvents.length, 1)
-    assert.deepStrictEqual(publishedEvents[0].payload, { body: {} })
+    assert.strictEqual(res.statusCode, 400)
+    assert.deepStrictEqual(res.body, { error: '缺少 username', code: 'validation_error' })
+    assert.strictEqual(publishedEvents.length, 0)
+  })
+
+  it('rejects request when username is empty or whitespace', async () => {
+    registerSkinRefreshRoutes(app, {
+      config: {},
+      jsonErr: createJsonErr(),
+      eventBus,
+    })
+
+    for (const username of ['', '   ']) {
+      const req = createReq({ body: { username } })
+      const res = createRes()
+
+      await app.routes[0].handler(req, res)
+
+      assert.strictEqual(res.statusCode, 400)
+      assert.deepStrictEqual(res.body, { error: '缺少 username', code: 'validation_error' })
+    }
+
+    assert.strictEqual(publishedEvents.length, 0)
   })
 })
