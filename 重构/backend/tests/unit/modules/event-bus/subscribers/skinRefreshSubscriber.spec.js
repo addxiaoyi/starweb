@@ -14,10 +14,22 @@ describe('skinRefreshSubscriber', () => {
   let logs
   let logger
 
+  function waitForNoEvent(bus, eventName, timeoutMs = 50) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => resolve('timeout'), timeoutMs)
+      bus.once(eventName, () => {
+        clearTimeout(timer)
+        resolve('emitted')
+      })
+    })
+  }
+
   beforeEach(() => {
-    logs = { debug: [] }
+    logs = { debug: [], warn: [], error: [] }
     logger = {
       debug: (...args) => logs.debug.push(args),
+      warn: (...args) => logs.warn.push(args),
+      error: (...args) => logs.error.push(args),
     }
     bus = new EventBus(logger)
   })
@@ -60,5 +72,58 @@ describe('skinRefreshSubscriber', () => {
     const event = await promise
 
     assert.deepStrictEqual(event, { body: { username: 'Alex' } })
+  })
+
+  it('warns and does not publish when payload is null', async () => {
+    registerSkinRefreshSubscriber(bus, { logger })
+    const result = waitForNoEvent(bus, Events.VLA_COMMAND_SKIN_REFRESH)
+
+    bus.publish(Events.PLUGIN_SKIN_REFRESH_RECEIVED, null)
+
+    assert.strictEqual(await result, 'timeout')
+    assert.strictEqual(logs.warn.length, 1)
+    assert.ok(logs.warn[0][0].includes('invalid payload shape'))
+  })
+
+  it('does not publish when payload is an array', async () => {
+    registerSkinRefreshSubscriber(bus, { logger })
+    const result = waitForNoEvent(bus, Events.VLA_COMMAND_SKIN_REFRESH)
+
+    bus.publish(Events.PLUGIN_SKIN_REFRESH_RECEIVED, [])
+
+    assert.strictEqual(await result, 'timeout')
+    assert.strictEqual(logs.warn.length, 1)
+  })
+
+  it('does not publish when payload is a string', async () => {
+    registerSkinRefreshSubscriber(bus, { logger })
+    const result = waitForNoEvent(bus, Events.VLA_COMMAND_SKIN_REFRESH)
+
+    bus.publish(Events.PLUGIN_SKIN_REFRESH_RECEIVED, 'invalid')
+
+    assert.strictEqual(await result, 'timeout')
+    assert.strictEqual(logs.warn.length, 1)
+  })
+
+  it('does not publish when payload.body is an array', async () => {
+    registerSkinRefreshSubscriber(bus, { logger })
+    const result = waitForNoEvent(bus, Events.VLA_COMMAND_SKIN_REFRESH)
+
+    bus.publish(Events.PLUGIN_SKIN_REFRESH_RECEIVED, { body: [] })
+
+    assert.strictEqual(await result, 'timeout')
+    assert.strictEqual(logs.warn.length, 1)
+    assert.ok(logs.warn[0][0].includes('invalid body shape'))
+  })
+
+  it('does not publish when payload.body is a string', async () => {
+    registerSkinRefreshSubscriber(bus, { logger })
+    const result = waitForNoEvent(bus, Events.VLA_COMMAND_SKIN_REFRESH)
+
+    bus.publish(Events.PLUGIN_SKIN_REFRESH_RECEIVED, { body: 'invalid' })
+
+    assert.strictEqual(await result, 'timeout')
+    assert.strictEqual(logs.warn.length, 1)
+    assert.ok(logs.warn[0][0].includes('invalid body shape'))
   })
 })
