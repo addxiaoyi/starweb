@@ -1,6 +1,14 @@
 import crypto from 'crypto'
 import { Events } from '../events.js'
 
+function findUserByLinkedMcUsername(store, mcUsername) {
+  const needle = String(mcUsername || '').trim().toLowerCase()
+  if (!needle) return undefined
+  return store.users.find(
+    (x) => x.linkedMcUsername && x.linkedMcUsername.toLowerCase() === needle
+  )
+}
+
 function buildCallbackRecord(store, body, meta) {
   const event = String(body.event || '').trim()
   const vlaInbound = Boolean(meta?.vlaInbound)
@@ -45,6 +53,7 @@ export function registerAuthSubscriber(bus, deps) {
     markUserProfileDirty,
     markKvDirty,
     scheduleSave,
+    logger = console,
   } = deps
 
   bus.subscribe(Events.PLUGIN_CALLBACK_RECEIVED, async (payload) => {
@@ -69,9 +78,7 @@ export function registerAuthSubscriber(bus, deps) {
       const verified = body.verified === true || body.verified === 'true'
 
       if (mcUsername && (!verified || !mojangUuid)) {
-        const u = store.users.find(
-          (x) => x.linkedMcUsername && x.linkedMcUsername.toLowerCase() === mcUsername
-        )
+        const u = findUserByLinkedMcUsername(store, mcUsername)
         if (u) {
           const conflictCode = verified ? 'callback_missing_mojang_uuid' : 'callback_not_verified'
           const failResult = failMcVerifySession(u.id, 'verification_failed', {
@@ -92,9 +99,7 @@ export function registerAuthSubscriber(bus, deps) {
           })
         }
       } else if (mcUsername) {
-        const u = store.users.find(
-          (x) => x.linkedMcUsername && x.linkedMcUsername.toLowerCase() === mcUsername
-        )
+        const u = findUserByLinkedMcUsername(store, mcUsername)
         if (u) {
           const completeResult = completeMcVerifySession(u.id, mojangUuid, { mcUsername })
           if (completeResult.ok) {
@@ -110,7 +115,7 @@ export function registerAuthSubscriber(bus, deps) {
               retryCount: Number(completeResult.session?.retries || 0),
               maxRetries: Number(completeResult.session?.maxRetries || 0),
             }
-            console.info(`[starmc-api] 正版验证完成：${mcUsername} (uuid=${mojangUuid})，用户=${u.id}`)
+            logger.info(`[starmc-api] 正版验证完成：${mcUsername} (uuid=${mojangUuid})，用户=${u.id}`)
             bus.publish(Events.AUTH_VERIFY_COMPLETED, {
               store,
               userId: u.id,
@@ -138,18 +143,16 @@ export function registerAuthSubscriber(bus, deps) {
       const mcUsername = String(body.username || '').trim().toLowerCase()
       const reason = String(body.reason || body.error || 'verify_failed').trim().toLowerCase()
       if (mcUsername) {
-        const u = store.users.find(
-          (x) => x.linkedMcUsername && x.linkedMcUsername.toLowerCase() === mcUsername
-        )
+        const u = findUserByLinkedMcUsername(store, mcUsername)
         if (u) {
-          const failResult = failMcVerifySession(u.id, reason || 'verify_failed', {
+          const failResult = failMcVerifySession(u.id, reason, {
             mcUsername,
             conflictCode: 'plugin_verify_failed',
           })
           if (failResult.ok) {
             const auditDetail = {
               mcUsername,
-              reason: reason || 'verify_failed',
+              reason,
               source: 'plugin_callback',
               sessionId: failResult.session?.id || null,
               retryCount: Number(failResult.session?.retries || 0),
@@ -164,7 +167,7 @@ export function registerAuthSubscriber(bus, deps) {
           } else {
             const auditDetail = {
               mcUsername,
-              reason: reason || 'verify_failed',
+              reason,
               source: 'plugin_callback',
               conflictCode: failResult?.code || 'unknown',
               event: 'verify_failed',
@@ -194,7 +197,7 @@ export function registerAuthSubscriber(bus, deps) {
       const externalUserId = String(body.external_user_id || '').trim()
       const linkedUser = externalUserId ? findUserByExternalUserId(store, externalUserId) : null
       const fallbackUser = !linkedUser && body.username
-        ? store.users.find((user) => String(user?.linkedMcUsername || '').trim().toLowerCase() === String(body.username || '').trim().toLowerCase())
+        ? findUserByLinkedMcUsername(store, body.username)
         : null
       const targetUser = linkedUser || fallbackUser
       const targetUserId = targetUser?.id || externalUserId || 'anonymous'
@@ -212,7 +215,7 @@ export function registerAuthSubscriber(bus, deps) {
         asn: String(body.asn || '').trim() || null,
         location: String(body.location || '').trim() || null,
         isp: String(body.isp || '').trim() || null,
-        riskScore: Number(body.risk_score || computed.riskScore) || computed.riskScore,
+        riskScore: body.risk_score != null ? Number(body.risk_score) : computed.riskScore,
         riskLevel: String(body.risk_level || '').trim().toLowerCase() || computed.riskLevel,
         deviceProfile: String(body.device_profile || '').trim() || computed.deviceProfile,
         externalUserId: externalUserId || null,

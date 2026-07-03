@@ -318,6 +318,10 @@ describe('securitySubscriber', () => {
 
     await waitForImmediate()
 
+    const handlerFailedEvents = publishedEvents.filter(
+      (e) => e.event === Events.EVENT_HANDLER_FAILED
+    )
+    assert.strictEqual(handlerFailedEvents.length, 0)
     const forwarded = publishedEvents.filter((e) => e.event !== Events.EVENT_HANDLER_FAILED)
     assert.strictEqual(forwarded.length, 5)
     const emittedBySubscriber = forwarded.filter((e) => !Object.values(Events).includes(e.event))

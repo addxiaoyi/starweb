@@ -17,6 +17,7 @@ export function registerSecuritySubscriber(bus, deps) {
 
   bus.subscribe(Events.AUTH_LOGIN_SUCCESS, (payload) => {
     const { store, loginRow } = payload || {}
+    if (!loginRow?.userId) return
     appendSecurityAudit(store, loginRow.userId, 'login_success', {
       username: loginRow.username,
       uuid: loginRow.uuid,
@@ -34,6 +35,7 @@ export function registerSecuritySubscriber(bus, deps) {
 
   bus.subscribe(Events.AUTH_VERIFY_COMPLETED, (payload) => {
     const { store, userId, auditDetail } = payload || {}
+    if (!auditDetail) return
     appendSecurityAudit(store, userId, 'verify_success', auditDetail)
     pushUserNotification(store, userId, {
       type: 'verify_success',
@@ -49,6 +51,7 @@ export function registerSecuritySubscriber(bus, deps) {
 
   bus.subscribe(Events.AUTH_VERIFY_FAILED, (payload) => {
     const { store, userId, auditDetail } = payload || {}
+    if (!auditDetail) return
     appendSecurityAudit(store, userId, 'verify_failed', auditDetail)
     pushUserNotification(store, userId, {
       type: 'verify_failed',
@@ -64,6 +67,7 @@ export function registerSecuritySubscriber(bus, deps) {
 
   bus.subscribe(Events.SECURITY_ALERT_RAISED, (payload) => {
     const { store, targetUserId, alertPayload } = payload || {}
+    if (!alertPayload) return
     appendSecurityAlert(
       store,
       targetUserId,
@@ -75,6 +79,7 @@ export function registerSecuritySubscriber(bus, deps) {
 
   bus.subscribe(Events.USER_BIND_EMAIL_COMPLETED, (payload) => {
     const { store, userId, email, mcUsername, created } = payload || {}
+    if (!userId) return
     appendSecurityAudit(store, userId, 'plugin_bind_email', {
       email,
       mcUsername,

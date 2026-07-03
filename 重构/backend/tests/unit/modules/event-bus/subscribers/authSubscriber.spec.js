@@ -166,7 +166,7 @@ describe('authSubscriber', () => {
     assert.strictEqual(store.authxEvents[0].event, 'verify_premium')
     assert.strictEqual(store.authxEvents[0].username, 'Steve')
     assert.strictEqual(calls.markKvDirty[0], 'authx_events')
-    assert.ok(calls.scheduleSave.length >= 1)
+    assert.strictEqual(calls.scheduleSave.length, 1)
   })
 
   it('truncates authxEvents to 5000 records', () => {
@@ -358,7 +358,7 @@ describe('authSubscriber', () => {
     assert.strictEqual(event.auditDetail.conflictCode, 'callback_not_verified')
   })
 
-  it('completeMcVerifySession returning ok=false publishes AUTH_VERIFY_FAILED with reason matching callbackService behavior', async () => {
+  it('completeMcVerifySession returning ok=false publishes AUTH_VERIFY_FAILED without reason', async () => {
     const localCalls = { completeMcVerifySession: [] }
     const localDeps = makeDeps({
       completeMcVerifySession: (userId, mojangUuid, options) => {
@@ -399,7 +399,7 @@ describe('authSubscriber', () => {
     assert.strictEqual(store.authxEvents[0].event, 'unknown')
     assert.strictEqual(calls.markKvDirty.length, 1)
     assert.strictEqual(calls.markKvDirty[0], 'authx_events')
-    assert.ok(calls.scheduleSave.length >= 1)
+    assert.strictEqual(calls.scheduleSave.length, 1)
     assert.strictEqual(calls.failMcVerifySession.length, 0)
     assert.strictEqual(calls.completeMcVerifySession.length, 0)
     assert.strictEqual(calls.appendLoginEvent.length, 0)
@@ -424,7 +424,7 @@ describe('authSubscriber', () => {
     assert.strictEqual(store.authxEvents.length, 1)
     assert.strictEqual(store.authxEvents[0].username, 'NotSteve')
     assert.strictEqual(calls.markKvDirty[0], 'authx_events')
-    assert.ok(calls.scheduleSave.length >= 1)
+    assert.strictEqual(calls.scheduleSave.length, 1)
     assert.strictEqual(calls.completeMcVerifySession.length, 0)
     assert.strictEqual(calls.failMcVerifySession.length, 0)
     assert.strictEqual(calls.markUserProfileDirty.length, 0)
