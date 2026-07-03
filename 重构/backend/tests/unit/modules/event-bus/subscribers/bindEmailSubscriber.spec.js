@@ -302,7 +302,21 @@ describe('bindEmailSubscriber', () => {
     assert.strictEqual(store.users[0].linkedMcUuid, null)
   })
 
-  it('throws invalid_email error when payload is null or undefined', async () => {
+  it('throws validation_error when store is missing', async () => {
+    const nullError = await captureHandlerError(bus, null, { email: 'test@example.com', username: 'Steve' })
+    assert.ok(nullError instanceof PluginBindEmailError)
+    assert.strictEqual(nullError.code, 'validation_error')
+    assert.strictEqual(nullError.status, 400)
+    assert.strictEqual(nullError.payload.message, '缺少 store')
+
+    const undefinedError = await captureHandlerError(bus, undefined, { email: 'test@example.com', username: 'Steve' })
+    assert.ok(undefinedError instanceof PluginBindEmailError)
+    assert.strictEqual(undefinedError.code, 'validation_error')
+    assert.strictEqual(undefinedError.status, 400)
+    assert.strictEqual(undefinedError.payload.message, '缺少 store')
+  })
+
+  it('throws invalid_email when payload body is null or undefined', async () => {
     const nullError = await captureHandlerError(bus, store, null)
     assert.ok(nullError instanceof PluginBindEmailError)
     assert.strictEqual(nullError.code, 'invalid_email')
@@ -454,7 +468,8 @@ describe('bindEmailSubscriber', () => {
     assert.strictEqual(error.status, 504)
     assert.ok(typeof error.payload.message === 'string')
     assert.ok(error.payload.message.length > 0)
-    assert.strictEqual(error.payload.originalError, 'timeout')
+    assert.ok(error.payload.originalError instanceof Error)
+    assert.strictEqual(error.payload.originalError.message, 'timeout')
     assert.strictEqual(calls.publishAndWait.length, 1)
     assert.strictEqual(calls.publishAndWait[0].event, Events.VLA_COMMAND_LINK_EXTERNAL_USER)
   })
@@ -472,10 +487,26 @@ describe('bindEmailSubscriber', () => {
     assert.strictEqual(error.status, 504)
     assert.ok(typeof error.payload.message === 'string')
     assert.ok(error.payload.message.length > 0)
-    assert.strictEqual(error.payload.originalError, 'timeout')
+    assert.ok(error.payload.originalError instanceof Error)
+    assert.strictEqual(error.payload.originalError.message, 'timeout')
     assert.strictEqual(calls.publishAndWait.length, 2)
     assert.strictEqual(calls.publishAndWait[1].event, Events.VLA_COMMAND_NOTIFY_BIND_EMAIL)
     assert.strictEqual(store.users[0].linkedMcUsername, null)
+  })
+
+  it('wraps non-Error rejection values when VLA link command rejects', async () => {
+    vlaStubs.link = Promise.reject('bad')
+
+    const error = await captureHandlerError(bus, store, {
+      email: 'test@example.com',
+      username: 'Steve',
+    })
+
+    assert.ok(error instanceof PluginBindEmailError)
+    assert.strictEqual(error.code, 'link_failed')
+    assert.strictEqual(error.status, 504)
+    assert.ok(error.payload.originalError instanceof Error)
+    assert.strictEqual(error.payload.originalError.message, 'bad')
   })
 
   it('succeeds when the same user re-binds the same username', async () => {

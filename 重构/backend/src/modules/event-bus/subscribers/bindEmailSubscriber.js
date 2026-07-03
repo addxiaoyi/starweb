@@ -15,9 +15,10 @@ async function executeVlaCommand(bus, event, payload, { errorCode, defaultMessag
   try {
     return await bus.publishAndWait(event, payload)
   } catch (err) {
+    const originalError = err instanceof Error ? err : new Error(String(err))
     throw new PluginBindEmailError(errorCode, 504, {
       message: defaultMessage,
-      originalError: err.message,
+      originalError,
     })
   }
 }
@@ -44,6 +45,10 @@ export function registerBindEmailSubscriber(bus, deps) {
 
   bus.subscribe(Events.PLUGIN_BIND_EMAIL_RECEIVED, async (payload) => {
     const { store, body } = payload || {}
+
+    if (!store) {
+      throw new PluginBindEmailError('validation_error', 400, { message: '缺少 store' })
+    }
 
     const email = String(body?.email || '').trim().toLowerCase()
     const mcUsername = String(body?.username || '').trim()
@@ -130,6 +135,7 @@ export function registerBindEmailSubscriber(bus, deps) {
 
     scheduleSave()
 
+    // 故意使用 fire-and-forget 发布，避免阻塞主处理流程
     bus.publish(Events.USER_BIND_EMAIL_COMPLETED, {
       store,
       userId: localUser.id,
