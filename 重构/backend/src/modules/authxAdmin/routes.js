@@ -13,6 +13,24 @@ function normalizeCommandReply(reply) {
   return { ok: true, result: reply?.result ?? reply }
 }
 
+function registerCommandRoute(app, deps, { path, event, validate }) {
+  app.post(path, asyncHandler(async (req, res) => {
+    if (!deps.requireDevAdmin(req, res)) return
+    const validationError = validate ? validate(req.body || {}) : null
+    if (validationError) return deps.jsonErr(res, 400, validationError.message, validationError.code)
+    try {
+      const reply = await deps.eventBus.publishAndWait(event, { body: req.body || {} })
+      const normalized = normalizeCommandReply(reply)
+      if (!normalized.ok) {
+        return deps.jsonErr(res, normalized.result?.status ?? 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
+      }
+      return respondPluginJson(res, normalized.result)
+    } catch (err) {
+      return deps.jsonErr(res, 502, '插件命令执行失败', 'plugin_command_failed', { reason: err.message })
+    }
+  }))
+}
+
 export function registerAuthxAdminRoutes(app, deps) {
   const {
     requireDevAdmin,
@@ -22,13 +40,8 @@ export function registerAuthxAdminRoutes(app, deps) {
     adminPluginGetLimiter,
     jsonErr,
     jsonOk,
-    eventBus
   } = deps
-  const okResponse = typeof jsonOk === 'function'
-    ? jsonOk
-    : (res, payload = {}, status = 200) => res
-      .status(Number(status))
-      .json({ ok: true, success: true, ...(payload && typeof payload === 'object' ? payload : {}) })
+  const okResponse = jsonOk
 
   app.get('/api/admin/authx/plugin-health', asyncHandler(async (req, res) => {
     if (!requireDevAdmin(req, res)) return
@@ -43,7 +56,7 @@ export function registerAuthxAdminRoutes(app, deps) {
       error: 'plugin_health_failed',
       details: {
         reachable: Boolean(probe?.reachable),
-        status: Number(probe?.status || 0) || null,
+        status: Number(probe?.status ?? 0) || null,
       },
       plugin: probe
     })
@@ -95,119 +108,55 @@ export function registerAuthxAdminRoutes(app, deps) {
     })
   )
 
-  app.post('/api/admin/authx/reset-password', asyncHandler(async (req, res) => {
-    if (!requireDevAdmin(req, res)) return
-    const { username, newPassword } = req.body || {}
-    if (!username) {
-      return jsonErr(res, 400, '缺少 username', 'validation_error')
+  registerCommandRoute(app, deps, {
+    path: '/api/admin/authx/reset-password',
+    event: Events.VLA_COMMAND_RESET_PASSWORD,
+    validate: (body) => {
+      if (!body.username) return { message: '缺少 username', code: 'validation_error' }
+      return null
     }
-    const reply = await eventBus.publishAndWait(
-      Events.VLA_COMMAND_RESET_PASSWORD,
-      { body: { username, newPassword } }
-    )
-    const normalized = normalizeCommandReply(reply)
-    if (!normalized.ok) {
-      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
-    }
-    return respondPluginJson(res, normalized.result)
-  }))
+  })
 
-  app.post('/api/admin/authx/bind-email', asyncHandler(async (req, res) => {
-    if (!requireDevAdmin(req, res)) return
-    const { username, email } = req.body || {}
-    if (!username) {
-      return jsonErr(res, 400, '缺少 username', 'validation_error')
+  registerCommandRoute(app, deps, {
+    path: '/api/admin/authx/bind-email',
+    event: Events.VLA_COMMAND_BIND_EMAIL,
+    validate: (body) => {
+      if (!body.username) return { message: '缺少 username', code: 'validation_error' }
+      return null
     }
-    const reply = await eventBus.publishAndWait(
-      Events.VLA_COMMAND_BIND_EMAIL,
-      { body: { username, email } }
-    )
-    const normalized = normalizeCommandReply(reply)
-    if (!normalized.ok) {
-      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
-    }
-    return respondPluginJson(res, normalized.result)
-  }))
+  })
 
-  app.post('/api/admin/authx/unbind-device', asyncHandler(async (req, res) => {
-    if (!requireDevAdmin(req, res)) return
-    const { username, device } = req.body || {}
-    if (!username) {
-      return jsonErr(res, 400, '缺少 username', 'validation_error')
+  registerCommandRoute(app, deps, {
+    path: '/api/admin/authx/unbind-device',
+    event: Events.VLA_COMMAND_UNBIND_DEVICE,
+    validate: (body) => {
+      if (!body.username) return { message: '缺少 username', code: 'validation_error' }
+      return null
     }
-    const reply = await eventBus.publishAndWait(
-      Events.VLA_COMMAND_UNBIND_DEVICE,
-      { body: { username, device } }
-    )
-    const normalized = normalizeCommandReply(reply)
-    if (!normalized.ok) {
-      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
-    }
-    return respondPluginJson(res, normalized.result)
-  }))
+  })
 
-  app.post('/api/admin/authx/kick-online', asyncHandler(async (req, res) => {
-    if (!requireDevAdmin(req, res)) return
-    const reply = await eventBus.publishAndWait(
-      Events.VLA_COMMAND_KICK_ONLINE,
-      { body: req.body || {} }
-    )
-    const normalized = normalizeCommandReply(reply)
-    if (!normalized.ok) {
-      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
-    }
-    return respondPluginJson(res, normalized.result)
-  }))
+  registerCommandRoute(app, deps, {
+    path: '/api/admin/authx/kick-online',
+    event: Events.VLA_COMMAND_KICK_ONLINE
+  })
 
-  app.post('/api/admin/authx/ban', asyncHandler(async (req, res) => {
-    if (!requireDevAdmin(req, res)) return
-    const reply = await eventBus.publishAndWait(
-      Events.VLA_COMMAND_BAN,
-      { body: req.body || {} }
-    )
-    const normalized = normalizeCommandReply(reply)
-    if (!normalized.ok) {
-      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
-    }
-    return respondPluginJson(res, normalized.result)
-  }))
+  registerCommandRoute(app, deps, {
+    path: '/api/admin/authx/ban',
+    event: Events.VLA_COMMAND_BAN
+  })
 
-  app.post('/api/admin/authx/delete-user', asyncHandler(async (req, res) => {
-    if (!requireDevAdmin(req, res)) return
-    const reply = await eventBus.publishAndWait(
-      Events.VLA_COMMAND_DELETE_USER,
-      { body: req.body || {} }
-    )
-    const normalized = normalizeCommandReply(reply)
-    if (!normalized.ok) {
-      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
-    }
-    return respondPluginJson(res, normalized.result)
-  }))
+  registerCommandRoute(app, deps, {
+    path: '/api/admin/authx/delete-user',
+    event: Events.VLA_COMMAND_DELETE_USER
+  })
 
-  app.post('/api/admin/authx/skin-refresh', asyncHandler(async (req, res) => {
-    if (!requireDevAdmin(req, res)) return
-    const reply = await eventBus.publishAndWait(
-      Events.VLA_COMMAND_SKIN_REFRESH,
-      { body: req.body || {} }
-    )
-    const normalized = normalizeCommandReply(reply)
-    if (!normalized.ok) {
-      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
-    }
-    return respondPluginJson(res, normalized.result)
-  }))
+  registerCommandRoute(app, deps, {
+    path: '/api/admin/authx/skin-refresh',
+    event: Events.VLA_COMMAND_SKIN_REFRESH
+  })
 
-  app.post('/api/admin/authx/link-external-user', asyncHandler(async (req, res) => {
-    if (!requireDevAdmin(req, res)) return
-    const reply = await eventBus.publishAndWait(
-      Events.VLA_COMMAND_LINK_EXTERNAL_USER,
-      { body: req.body || {} }
-    )
-    const normalized = normalizeCommandReply(reply)
-    if (!normalized.ok) {
-      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
-    }
-    return respondPluginJson(res, normalized.result)
-  }))
+  registerCommandRoute(app, deps, {
+    path: '/api/admin/authx/link-external-user',
+    event: Events.VLA_COMMAND_LINK_EXTERNAL_USER
+  })
 }

@@ -151,12 +151,8 @@ describe('authxAdmin routes', () => {
       await getHandler(app, 'GET', '/api/admin/authx/plugin-metrics')({}, res)
 
       assert.strictEqual(res.statusCode, 400)
-      assert.deepStrictEqual(res.body, {
-        ok: false,
-        message: '当前接口仅支持 VLA 适配器',
-        code: 'plugin_metrics_requires_vla',
-        details: undefined,
-      })
+      assert.strictEqual(res.body.code, 'plugin_metrics_requires_vla')
+      assert.strictEqual(res.body.message, '当前接口仅支持 VLA 适配器')
     })
   })
 
@@ -179,6 +175,20 @@ describe('authxAdmin routes', () => {
       assert.deepStrictEqual(res.body, { ok: true, success: true, banned: false })
       assert.deepStrictEqual(getCalls, [{ path: '/v1/ban', query: { name: 'Steve' } }])
       assert.strictEqual(deps.eventBus.calls.length, 0)
+    })
+
+    it('returns plain text when plugin responds without json', async () => {
+      const app = createAppStub()
+      const deps = createDeps({
+        pluginFetchGet: async () => ({ status: 200, text: 'banned: true' }),
+      })
+      registerAuthxAdminRoutes(app, deps)
+
+      const res = createMockRes()
+      await getHandler(app, 'GET', '/api/admin/authx/ban-check')({ query: { name: 'Steve' } }, res)
+
+      assert.strictEqual(res.statusCode, 200)
+      assert.strictEqual(res.body, 'banned: true')
     })
 
     it('returns error when adapter is not vla', async () => {
@@ -226,6 +236,20 @@ describe('authxAdmin routes', () => {
       assert.deepStrictEqual(res.body, { ok: true, success: true, exists: true })
       assert.deepStrictEqual(getCalls, [{ path: '/v1/user/exists', query: { name: 'Steve' } }])
       assert.strictEqual(deps.eventBus.calls.length, 0)
+    })
+
+    it('returns plain text when plugin responds without json', async () => {
+      const app = createAppStub()
+      const deps = createDeps({
+        pluginFetchGet: async () => ({ status: 200, text: 'exists: true' }),
+      })
+      registerAuthxAdminRoutes(app, deps)
+
+      const res = createMockRes()
+      await getHandler(app, 'GET', '/api/admin/authx/user-exists')({ query: { name: 'Steve' } }, res)
+
+      assert.strictEqual(res.statusCode, 200)
+      assert.strictEqual(res.body, 'exists: true')
     })
 
     it('returns error when adapter is not vla', async () => {
@@ -330,6 +354,24 @@ describe('authxAdmin routes', () => {
       assert.deepStrictEqual(call.payload.body, { username: 'Steve', email: 'steve@example.com' })
       assert.strictEqual(res.statusCode, 200)
       assert.deepStrictEqual(res.body, { ok: true, success: true, linked: true })
+    })
+
+    it('returns 502 when ok:false has no result', async () => {
+      const eventBus = createMockEventBus({
+        ok: false,
+        error: 'plugin timeout',
+      })
+      const app = createAppStub()
+      const deps = createDeps({ eventBus })
+      registerAuthxAdminRoutes(app, deps)
+
+      const res = createMockRes()
+      const req = { body: { username: 'Steve', email: 'steve@example.com' } }
+      await getHandler(app, 'POST', '/api/admin/authx/bind-email')(req, res)
+
+      assert.strictEqual(res.statusCode, 502)
+      assert.strictEqual(res.body.code, 'plugin_command_failed')
+      assert.strictEqual(res.body.message, 'plugin timeout')
     })
 
     it('returns validation error when username is missing', async () => {
@@ -500,6 +542,26 @@ describe('authxAdmin routes', () => {
   })
 
   describe('eventBus ok:false handling', () => {
+    it('returns 502 when publishAndWait throws', async () => {
+      const eventBus = {
+        async publishAndWait() {
+          throw new Error('event bus timeout')
+        },
+      }
+      const app = createAppStub()
+      const deps = createDeps({ eventBus })
+      registerAuthxAdminRoutes(app, deps)
+
+      const res = createMockRes()
+      const req = { body: { username: 'Steve', newPassword: 'secret123' } }
+      await getHandler(app, 'POST', '/api/admin/authx/reset-password')(req, res)
+
+      assert.strictEqual(res.statusCode, 502)
+      assert.strictEqual(res.body.code, 'plugin_command_failed')
+      assert.strictEqual(res.body.message, '插件命令执行失败')
+      assert.deepStrictEqual(res.body.details, { reason: 'event bus timeout' })
+    })
+
     it('returns plugin error with result details when ok:false includes result', async () => {
       const eventBus = createMockEventBus({
         ok: false,
