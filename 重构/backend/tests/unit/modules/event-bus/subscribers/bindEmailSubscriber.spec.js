@@ -295,7 +295,7 @@ describe('bindEmailSubscriber', () => {
   })
 
   it('throws link_failed when VLA link command fails', async () => {
-    vla.link = { ok: false, result: { status: 503, json: { error: 'VLA link down' } }, error: 'VLA admin returned 503' }
+    vla.link = { ok: false, result: { status: 503, json: { error: 'VLA link down' } } }
 
     const error = await captureHandlerError(bus, store, {
       email: 'test@example.com',
@@ -310,7 +310,7 @@ describe('bindEmailSubscriber', () => {
   })
 
   it('throws bind_email_failed when VLA notify command fails', async () => {
-    vla.bind = { ok: false, result: { status: 500, json: { error: 'bind notify failed' } }, error: 'VLA admin returned 500' }
+    vla.bind = { ok: false, result: { status: 500, json: { error: 'bind notify failed' } } }
 
     const error = await captureHandlerError(bus, store, {
       email: 'test@example.com',
@@ -324,8 +324,24 @@ describe('bindEmailSubscriber', () => {
     assert.strictEqual(calls.vlaNotify.length, 1)
   })
 
-  it('throws link_failed with 502 when VLA link command throws without result', async () => {
-    vla.link = { ok: false, error: 'network error' }
+  it('throws bind_email_failed with 502 and default message when VLA notify command fails without result', async () => {
+    vla.bind = { ok: false, result: { status: 200, json: { ok: false } } }
+
+    const error = await captureHandlerError(bus, store, {
+      email: 'test@example.com',
+      username: 'Steve',
+    })
+
+    assert.ok(error instanceof PluginBindEmailError)
+    assert.strictEqual(error.code, 'bind_email_failed')
+    assert.strictEqual(error.status, 502)
+    assert.deepStrictEqual(error.payload, { message: '插件邮箱同步失败' })
+    assert.strictEqual(calls.vlaLink.length, 1)
+    assert.strictEqual(calls.vlaNotify.length, 1)
+  })
+
+  it('throws link_failed with 502 and default message when VLA link command fails without result', async () => {
+    vla.link = { ok: false, result: { status: 200, json: { ok: false } } }
 
     const error = await captureHandlerError(bus, store, {
       email: 'test@example.com',
@@ -335,7 +351,7 @@ describe('bindEmailSubscriber', () => {
     assert.ok(error instanceof PluginBindEmailError)
     assert.strictEqual(error.code, 'link_failed')
     assert.strictEqual(error.status, 502)
-    assert.deepStrictEqual(error.payload, { message: 'network error' })
+    assert.deepStrictEqual(error.payload, { message: '绑定失败' })
     assert.strictEqual(calls.vlaLink.length, 1)
     assert.strictEqual(calls.vlaNotify.length, 0)
   })

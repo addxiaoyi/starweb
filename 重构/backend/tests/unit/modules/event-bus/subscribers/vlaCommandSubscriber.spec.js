@@ -129,6 +129,74 @@ describe('vlaCommandSubscriber', () => {
     assert.ok(logs.errors[0][0].includes('invalid'))
   })
 
+  it('replies ok:true when pluginFetchJson returns 200 with json.ok: undefined (original compatibility)', async () => {
+    pluginFetchJson = async () => ({ status: 200, json: { ok: undefined, data: 'x' } })
+    const okBus = new EventBus(logger)
+    registerVlaCommandSubscriber(okBus, { pluginFetchJson, config: { authxPluginAdapter: 'vla' }, logger })
+
+    const requestId = 'ok-undefined-reply'
+    const replyPromise = waitForEvent(okBus, `vla:command:reply:${requestId}`)
+    const completedPromise = waitForEvent(okBus, Events.VLA_COMMAND_COMPLETED)
+
+    okBus.publish(Events.VLA_COMMAND_BAN, { body: { username: 'x' }, _replyTo: requestId })
+    const [reply, completed] = await Promise.all([replyPromise, completedPromise])
+
+    const result = { status: 200, json: { ok: undefined, data: 'x' } }
+    assert.deepStrictEqual(reply, { ok: true, result })
+    assert.deepStrictEqual(completed, { command: Events.VLA_COMMAND_BAN, ok: true, result })
+  })
+
+  it('replies ok:true when pluginFetchJson returns 200 with json.ok: null', async () => {
+    pluginFetchJson = async () => ({ status: 200, json: { ok: null } })
+    const okBus = new EventBus(logger)
+    registerVlaCommandSubscriber(okBus, { pluginFetchJson, config: { authxPluginAdapter: 'vla' }, logger })
+
+    const requestId = 'ok-null-reply'
+    const replyPromise = waitForEvent(okBus, `vla:command:reply:${requestId}`)
+    const completedPromise = waitForEvent(okBus, Events.VLA_COMMAND_COMPLETED)
+
+    okBus.publish(Events.VLA_COMMAND_BAN, { body: { username: 'x' }, _replyTo: requestId })
+    const [reply, completed] = await Promise.all([replyPromise, completedPromise])
+
+    const result = { status: 200, json: { ok: null } }
+    assert.deepStrictEqual(reply, { ok: true, result })
+    assert.deepStrictEqual(completed, { command: Events.VLA_COMMAND_BAN, ok: true, result })
+  })
+
+  it('replies ok:true when pluginFetchJson returns 200 with a truthy non-boolean json.ok', async () => {
+    pluginFetchJson = async () => ({ status: 200, json: { ok: 'yes' } })
+    const okBus = new EventBus(logger)
+    registerVlaCommandSubscriber(okBus, { pluginFetchJson, config: { authxPluginAdapter: 'vla' }, logger })
+
+    const requestId = 'ok-yes-reply'
+    const replyPromise = waitForEvent(okBus, `vla:command:reply:${requestId}`)
+    const completedPromise = waitForEvent(okBus, Events.VLA_COMMAND_COMPLETED)
+
+    okBus.publish(Events.VLA_COMMAND_BAN, { body: { username: 'x' }, _replyTo: requestId })
+    const [reply, completed] = await Promise.all([replyPromise, completedPromise])
+
+    const result = { status: 200, json: { ok: 'yes' } }
+    assert.deepStrictEqual(reply, { ok: true, result })
+    assert.deepStrictEqual(completed, { command: Events.VLA_COMMAND_BAN, ok: true, result })
+  })
+
+  it('replies ok:true when pluginFetchJson returns 200 without json', async () => {
+    pluginFetchJson = async () => ({ status: 200 })
+    const okBus = new EventBus(logger)
+    registerVlaCommandSubscriber(okBus, { pluginFetchJson, config: { authxPluginAdapter: 'vla' }, logger })
+
+    const requestId = 'no-json-reply'
+    const replyPromise = waitForEvent(okBus, `vla:command:reply:${requestId}`)
+    const completedPromise = waitForEvent(okBus, Events.VLA_COMMAND_COMPLETED)
+
+    okBus.publish(Events.VLA_COMMAND_BAN, { body: { username: 'x' }, _replyTo: requestId })
+    const [reply, completed] = await Promise.all([replyPromise, completedPromise])
+
+    const result = { status: 200 }
+    assert.deepStrictEqual(reply, { ok: true, result })
+    assert.deepStrictEqual(completed, { command: Events.VLA_COMMAND_BAN, ok: true, result })
+  })
+
   it('publishes VLA_COMMAND_FAILED and replies ok:false when pluginFetchJson returns a non-200 2xx status', async () => {
     pluginFetchJson = async () => ({ status: 204 })
     const failingBus = new EventBus(logger)

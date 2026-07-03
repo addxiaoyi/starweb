@@ -57,7 +57,7 @@ export function registerBindEmailSubscriber(bus, deps) {
         ? linkResult.result.status
         : 502
       throw new PluginBindEmailError('link_failed', status, {
-        message: linkResult.result?.json?.error || linkResult.error || '绑定失败',
+        message: linkResult.result?.json?.error || '绑定失败',
       })
     }
 
@@ -69,7 +69,7 @@ export function registerBindEmailSubscriber(bus, deps) {
         ? bindResult.result.status
         : 502
       throw new PluginBindEmailError('bind_email_failed', status, {
-        message: bindResult.result?.json?.error || bindResult.error || '插件邮箱同步失败',
+        message: bindResult.result?.json?.error || '插件邮箱同步失败',
       })
     }
 
