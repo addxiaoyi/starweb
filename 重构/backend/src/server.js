@@ -85,6 +85,13 @@ import { registerMapHealthRoutes } from './modules/ops/mapHealth.js'
 import { registerSkinRefreshRoutes } from './modules/plugin-gateway/skinRefresh.js'
 import { registerPluginGatewayRoutes } from './modules/plugin-gateway/index.js'
 import { isPluginWebhookAuthConfigured } from './modules/plugin-gateway/adapter.js'
+import { EventBus } from './modules/event-bus/index.js'
+import { Events } from './modules/event-bus/events.js'
+import { registerVlaCommandSubscriber } from './modules/event-bus/subscribers/vlaCommandSubscriber.js'
+import { registerAuthSubscriber } from './modules/event-bus/subscribers/authSubscriber.js'
+import { registerBindEmailSubscriber } from './modules/event-bus/subscribers/bindEmailSubscriber.js'
+import { registerSkinRefreshSubscriber } from './modules/event-bus/subscribers/skinRefreshSubscriber.js'
+import { registerSecuritySubscriber } from './modules/event-bus/subscribers/securitySubscriber.js'
 import { createRetryOpsTaskHandler } from './modules/ops/retryRoute.js'
 import { createRetryDeadLetterHandler } from './modules/ops/deadLetterRetryRoute.js'
 import {
@@ -103,6 +110,8 @@ import { requireAdminAccessOrJson } from './utils/adminAccess.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const upload = createSkinUpload()
+
+void Events
 
 let authxAdapterDeprecationWarned = false
 function warnAuthxAdapterDeprecated() {
@@ -1223,9 +1232,47 @@ async function ensureSiteUserForPluginEmail(store, email) {
   return { localUser, stUser, created }
 }
 
+let eventBus
+
 function createApiApp() {
   const app = express()
   if (config.trustProxy) app.set('trust proxy', 1)
+
+  const logger = {
+    info: (...args) => console.info('[event-bus]', ...args),
+    warn: (...args) => console.warn('[event-bus]', ...args),
+    error: (...args) => console.error('[event-bus]', ...args),
+  }
+  eventBus = new EventBus(logger)
+  registerVlaCommandSubscriber(eventBus, { pluginFetchJson, config, logger })
+  registerAuthSubscriber(eventBus, {
+    failMcVerifySession,
+    completeMcVerifySession,
+    appendLoginEvent,
+    findUserByExternalUserId,
+    computeLoginRisk,
+    ensureSecurityCenter,
+    markUserProfileDirty,
+    scheduleSave,
+    markKvDirty,
+    logger,
+  })
+  registerBindEmailSubscriber(eventBus, {
+    isValidEmailAddress,
+    findUserByLinkedMcUsername,
+    ensureSiteUserForPluginEmail,
+    markUserProfileDirty,
+    appendSecurityAudit,
+    pushUserNotification,
+    scheduleSave,
+  })
+  registerSkinRefreshSubscriber(eventBus, { logger })
+  registerSecuritySubscriber(eventBus, {
+    appendSecurityAudit,
+    appendSecurityAlert,
+    pushUserNotification,
+    scheduleSave,
+  })
 
   initSuperTokens()
 
@@ -1381,29 +1428,9 @@ function createApiApp() {
     jsonErr,
     getStore,
     authxWebhookCallbackLimiter,
+    eventBus,
     callbackDeps: {
-      failMcVerifySession,
-      completeMcVerifySession,
-      appendLoginEvent,
-      appendSecurityAudit,
-      appendSecurityAlert,
-      pushUserNotification,
-      findUserByExternalUserId,
-      computeLoginRisk,
-      ensureSecurityCenter,
-      markUserProfileDirty,
-      scheduleSave,
       markKvDirty,
-    },
-    bindEmailDeps: {
-      isValidEmailAddress,
-      findUserByLinkedMcUsername,
-      ensureSiteUserForPluginEmail,
-      vlaLinkExternalUser,
-      vlaAdminBindEmail,
-      markUserProfileDirty,
-      appendSecurityAudit,
-      pushUserNotification,
       scheduleSave,
     },
   })
@@ -2049,21 +2076,6 @@ function createApiApp() {
     const r = await pluginFetchJson('/internal/v1/link/external-user', {
       username: mcUsername,
       external_user_id: externalUserId
-    })
-    const ok =
-      r.status === 200 &&
-      r.json &&
-      (r.json.ok === true || r.json.ok === undefined)
-    return { ok, status: r.status, json: r.json }
-  }
-
-  async function vlaAdminBindEmail(mcUsername, email) {
-    if (config.authxPluginAdapter !== 'vla') {
-      return { ok: false, skipped: true, message: '当前未使用 VLA 适配器，跳过邮箱同步' }
-    }
-    const r = await pluginFetchJson('/api/plugin/authx/admin/bind-email', {
-      username: mcUsername,
-      email,
     })
     const ok =
       r.status === 200 &&
@@ -2932,12 +2944,12 @@ function createApiApp() {
   registerAuthxAdminRoutes(app, {
     requireDevAdmin: requireAuthxAdminAccess,
     pluginFetchHealth,
-    pluginFetchJson,
     pluginFetchGet,
     config,
     adminPluginGetLimiter,
     jsonErr,
-    jsonOk
+    jsonOk,
+    eventBus,
   })
 
   function normalizeDashboardConfig(input) {
@@ -4214,7 +4226,7 @@ function createApiApp() {
     ensurePlayerState
   })
 
-  registerSkinRefreshRoutes(app, { config, jsonErr, pluginFetchJson })
+  registerSkinRefreshRoutes(app, { config, jsonErr, eventBus })
 
   app.get('/api/skin/current', (req, res) => {
     const uuid = String(req.query.uuid || '').trim()
@@ -4287,7 +4299,7 @@ function createPluginApp() {
 
   app.get('/healthz', (_req, res) => res.status(200).send('ok'))
 
-  registerSkinRefreshRoutes(app, { config, jsonErr })
+  registerSkinRefreshRoutes(app, { config, jsonErr, eventBus })
 
   app.use(notFoundHandler)
   app.use(errorHandler)
