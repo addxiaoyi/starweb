@@ -86,7 +86,6 @@ import { registerSkinRefreshRoutes } from './modules/plugin-gateway/skinRefresh.
 import { registerPluginGatewayRoutes } from './modules/plugin-gateway/index.js'
 import { isPluginWebhookAuthConfigured } from './modules/plugin-gateway/adapter.js'
 import { EventBus } from './modules/event-bus/index.js'
-import { Events } from './modules/event-bus/events.js'
 import { registerVlaCommandSubscriber } from './modules/event-bus/subscribers/vlaCommandSubscriber.js'
 import { registerAuthSubscriber } from './modules/event-bus/subscribers/authSubscriber.js'
 import { registerBindEmailSubscriber } from './modules/event-bus/subscribers/bindEmailSubscriber.js'
@@ -110,8 +109,6 @@ import { requireAdminAccessOrJson } from './utils/adminAccess.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const upload = createSkinUpload()
-
-void Events
 
 let authxAdapterDeprecationWarned = false
 function warnAuthxAdapterDeprecated() {
@@ -1429,10 +1426,6 @@ function createApiApp() {
     getStore,
     authxWebhookCallbackLimiter,
     eventBus,
-    callbackDeps: {
-      markKvDirty,
-      scheduleSave,
-    },
   })
 
   app.use(express.json({ limit: '512kb' }))
