@@ -39,9 +39,6 @@ function makeDeps(overrides = {}) {
     failMcVerifySession: [],
     completeMcVerifySession: [],
     appendLoginEvent: [],
-    appendSecurityAudit: [],
-    appendSecurityAlert: [],
-    pushUserNotification: [],
     findUserByExternalUserId: [],
     computeLoginRisk: [],
     ensureSecurityCenter: [],
@@ -74,15 +71,6 @@ function makeDeps(overrides = {}) {
         deviceProfile: 'trusted_device',
         externalUserId: payload.external_user_id || null,
       }
-    },
-    appendSecurityAudit: (store, userId, action, detail) => {
-      calls.appendSecurityAudit.push({ userId, action, detail })
-    },
-    appendSecurityAlert: (store, userId, level, title, payload) => {
-      calls.appendSecurityAlert.push({ userId, level, title, payload })
-    },
-    pushUserNotification: (store, userId, payload) => {
-      calls.pushUserNotification.push({ userId, payload })
     },
     findUserByExternalUserId: (store, externalUserId) => {
       calls.findUserByExternalUserId.push(externalUserId)
@@ -304,7 +292,6 @@ describe('authSubscriber', () => {
       method: 'microsoft',
       ip: '8.8.8.8',
     })
-    assert.strictEqual(calls.appendSecurityAudit.filter((x) => x.action === 'login_success').length, 1)
     assert.strictEqual(event.store, store)
     assert.deepStrictEqual(event.loginRow, {
       userId: 'user-1',
@@ -342,8 +329,6 @@ describe('authSubscriber', () => {
 
     const event = await alertPromise
 
-    assert.strictEqual(calls.appendSecurityAlert.length, 1)
-    assert.strictEqual(calls.appendSecurityAlert[0].userId, 'user-1')
     assert.strictEqual(event.store, store)
     assert.strictEqual(event.targetUserId, 'user-1')
     assert.strictEqual(event.alertPayload.username, 'Steve')
@@ -418,9 +403,6 @@ describe('authSubscriber', () => {
     assert.strictEqual(calls.failMcVerifySession.length, 0)
     assert.strictEqual(calls.completeMcVerifySession.length, 0)
     assert.strictEqual(calls.appendLoginEvent.length, 0)
-    assert.strictEqual(calls.appendSecurityAudit.length, 0)
-    assert.strictEqual(calls.appendSecurityAlert.length, 0)
-    assert.strictEqual(calls.pushUserNotification.length, 0)
     assert.strictEqual(calls.findUserByExternalUserId.length, 0)
     assert.strictEqual(calls.computeLoginRisk.length, 0)
     assert.strictEqual(calls.ensureSecurityCenter.length, 0)
@@ -445,8 +427,6 @@ describe('authSubscriber', () => {
     assert.ok(calls.scheduleSave.length >= 1)
     assert.strictEqual(calls.completeMcVerifySession.length, 0)
     assert.strictEqual(calls.failMcVerifySession.length, 0)
-    assert.strictEqual(calls.appendSecurityAudit.length, 0)
-    assert.strictEqual(calls.pushUserNotification.length, 0)
     assert.strictEqual(calls.markUserProfileDirty.length, 0)
   })
 })

@@ -37,8 +37,6 @@ function buildCallbackRecord(store, body, meta) {
 export function registerAuthSubscriber(bus, deps) {
   const {
     appendLoginEvent,
-    appendSecurityAudit,
-    appendSecurityAlert,
     ensureSecurityCenter,
     computeLoginRisk,
     findUserByExternalUserId,
@@ -46,7 +44,6 @@ export function registerAuthSubscriber(bus, deps) {
     completeMcVerifySession,
     markUserProfileDirty,
     markKvDirty,
-    pushUserNotification,
     scheduleSave,
   } = deps
 
@@ -88,7 +85,6 @@ export function registerAuthSubscriber(bus, deps) {
             conflictCode: failResult?.session?.conflictCode || failResult?.code || conflictCode,
             event: 'verify_premium',
           }
-          appendSecurityAudit(store, u.id, 'verify_failed', auditDetail)
           bus.publish(Events.AUTH_VERIFY_FAILED, {
             store,
             userId: u.id,
@@ -114,19 +110,6 @@ export function registerAuthSubscriber(bus, deps) {
               retryCount: Number(completeResult.session?.retries || 0),
               maxRetries: Number(completeResult.session?.maxRetries || 0),
             }
-            appendSecurityAudit(store, u.id, 'verify_success', auditDetail)
-            const notificationPayload = {
-              type: 'verify_success',
-              title: '正版验证成功',
-              message: `角色 ${mcUsername} 已通过正版验证`,
-              detail: {
-                mcUsername,
-                mojangUuid,
-                source: 'plugin_callback',
-              },
-            }
-            pushUserNotification(store, u.id, notificationPayload)
-            scheduleSave()
             console.info(`[starmc-api] 正版验证完成：${mcUsername} (uuid=${mojangUuid})，用户=${u.id}`)
             bus.publish(Events.AUTH_VERIFY_COMPLETED, {
               store,
@@ -140,7 +123,6 @@ export function registerAuthSubscriber(bus, deps) {
               conflictCode: completeResult?.code || 'unknown',
               event: 'verify_premium',
             }
-            appendSecurityAudit(store, u.id, 'verify_callback_conflict', auditDetail)
             bus.publish(Events.AUTH_VERIFY_FAILED, {
               store,
               userId: u.id,
@@ -174,18 +156,6 @@ export function registerAuthSubscriber(bus, deps) {
               maxRetries: Number(failResult.session?.maxRetries || 0),
               conflictCode: failResult.session?.conflictCode || 'plugin_verify_failed',
             }
-            appendSecurityAudit(store, u.id, 'verify_failed', auditDetail)
-            const notificationPayload = {
-              type: 'verify_failed',
-              title: '正版验证失败',
-              message: `角色 ${mcUsername} 验证失败：${reason || 'verify_failed'}`,
-              detail: {
-                mcUsername,
-                reason: reason || 'verify_failed',
-                source: 'plugin_callback',
-              },
-            }
-            pushUserNotification(store, u.id, notificationPayload)
             bus.publish(Events.AUTH_VERIFY_FAILED, {
               store,
               userId: u.id,
@@ -199,7 +169,6 @@ export function registerAuthSubscriber(bus, deps) {
               conflictCode: failResult?.code || 'unknown',
               event: 'verify_failed',
             }
-            appendSecurityAudit(store, u.id, 'verify_callback_conflict', auditDetail)
             bus.publish(Events.AUTH_VERIFY_FAILED, {
               store,
               userId: u.id,
@@ -213,20 +182,6 @@ export function registerAuthSubscriber(bus, deps) {
     // ── login_success ──────────────────────────────────────────────────────
     if (event === 'login_success') {
       const loginRow = appendLoginEvent(store, body)
-      const auditDetail = {
-        username: loginRow.username,
-        uuid: loginRow.uuid,
-        method: loginRow.method,
-        ip: loginRow.ip,
-        location: loginRow.location,
-        asn: loginRow.asn,
-        riskScore: loginRow.riskScore,
-        riskLevel: loginRow.riskLevel,
-        deviceProfile: loginRow.deviceProfile,
-        externalUserId: loginRow.externalUserId,
-        source: 'plugin_callback',
-      }
-      appendSecurityAudit(store, loginRow.userId, 'login_success', auditDetail)
       bus.publish(Events.AUTH_LOGIN_SUCCESS, {
         store,
         loginRow,
@@ -263,7 +218,6 @@ export function registerAuthSubscriber(bus, deps) {
         externalUserId: externalUserId || null,
         source: 'plugin_callback',
       }
-      appendSecurityAlert(store, targetUserId, computed.riskLevel, `登录安全告警：${String(body.type || 'unknown')}`, alertPayload)
       bus.publish(Events.SECURITY_ALERT_RAISED, {
         store,
         targetUserId,
