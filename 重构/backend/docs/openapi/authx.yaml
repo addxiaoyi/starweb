@@ -109,13 +109,18 @@ paths:
                 current_ip: { type: string }
       responses: &pluginBindEmailResponses
         "200":
-          description: "{ ok: true, created, userId, email, linkedMcUsername, linkedMcUuid, externalUserId }"
+          description: |
+            同步处理完成，返回绑定结果：
+            `{ ok: true, userId, email, mcUsername, mcUuid, created }`
+            若 `created=true` 表示为新邮箱创建了网站账号。
         "400":
-          description: 请求体非法或缺少必要字段
+          description: 请求体非法、邮箱格式错误、缺少 username 或角色名长度非法
         "401":
           description: 密钥或签名校验失败
         "409":
-          description: 角色或邮箱冲突
+          description: 角色或邮箱已被其他账号绑定
+        "502":
+          description: VLA 命令执行失败或不可达
         "503":
           description: 生产环境未配置 webhook 认证密钥
 
@@ -221,6 +226,8 @@ paths:
       responses:
         "200":
           description: "`{ ok, kicked }` 等插件 JSON"
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
 
   /api/admin/authx/ban-check:
     get:
@@ -277,6 +284,8 @@ paths:
       responses:
         "200":
           description: "{ ok: true }"
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
 
   /api/admin/authx/delete-user:
     post:
@@ -295,6 +304,8 @@ paths:
       responses:
         "200":
           description: "{ ok: true }"
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
 
   /api/admin/authx/skin-refresh:
     post:
@@ -314,6 +325,8 @@ paths:
       responses:
         "200":
           description: "{ ok: true }"
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
 
   /api/admin/authx/link-external-user:
     post:
@@ -331,6 +344,11 @@ paths:
               properties:
                 username: { type: string }
                 external_user_id: { type: string }
+      responses:
+        "200":
+          description: "{ ok: true }"
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
 
   /api/admin/authx/plugin-health:
     get:
@@ -367,6 +385,8 @@ paths:
       responses:
         "200":
           description: 插件返回 JSON 透传
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
 
   /api/admin/authx/bind-email:
     post:
@@ -379,6 +399,11 @@ paths:
               properties:
                 username: { type: string }
                 email: { type: string }
+      responses:
+        "200":
+          description: 插件返回 JSON 透传
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
 
   /api/admin/authx/unbind-device:
     post:
@@ -391,6 +416,11 @@ paths:
               properties:
                 username: { type: string }
                 device: { type: string }
+      responses:
+        "200":
+          description: 插件返回 JSON 透传
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
 
   /api/docs/openapi/authx:
     get:
@@ -488,3 +518,16 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
+  responses:
+    VlaCommandFailed:
+      description: "插件命令执行失败或插件不可达，返回 { ok: false, message, code: plugin_command_failed }"
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              ok: { type: boolean, example: false }
+              success: { type: boolean, example: false }
+              message: { type: string, example: 插件命令执行失败 }
+              code: { type: string, example: plugin_command_failed }
+              details: { type: object }

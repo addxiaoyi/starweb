@@ -260,6 +260,11 @@ npm run verify   # lint + 单元测试
 
 当前后端已按业务域拆分模块，`server.js` 主要负责中间件装配与路由注册：
 
+- `src/modules/event-bus/`
+  - `bus.js`：类型化进程内事件总线（基于 Node.js `events`）
+  - `events.js`：中心化事件名常量
+  - `subscribers/`：领域订阅器（auth / bind-email / skin-refresh / security / VLA command）
+  - `index.js`：统一导出 `EventBus` 与 `Events`
 - `src/modules/security/`
   - `routes.js`：安全中心 HTTP 路由
   - `service.js`：告警统计、趋势、会话/告警状态变更等逻辑
@@ -276,7 +281,24 @@ npm run verify   # lint + 单元测试
 设计约定：
 - `routes` 层只做参数解析、鉴权、HTTP 响应；
 - 业务计算与可复用逻辑下沉到 `service`；
-- 避免在 `server.js` 再次内联同类逻辑，防止重复实现。
+- 避免在 `server.js` 再次内联同类逻辑，防止重复实现；
+- 跨模块异步通信统一通过 `src/modules/event-bus` 进行， subscriber 集中注册于 `server.js` 的 `registerEventBusSubscribers`。
+
+## 事件总线架构
+
+后端使用进程内事件总线解耦 VLA 插件回调、`authxAdmin` 管理命令与各业务模块：
+
+- **入站回调**：`plugin-gateway` 完成验签后只发布事件（`PLUGIN_CALLBACK_RECEIVED`、`PLUGIN_BIND_EMAIL_RECEIVED`、`PLUGIN_SKIN_REFRESH_RECEIVED`），由对应 subscriber 处理业务副作用。
+- **出站命令**：`authxAdmin` POST 路由通过 `eventBus.publishAndWait` 发布 `VLA_COMMAND_*` 事件，`vlaCommandSubscriber` 统一转发到 VLA admin HTTP 端点并等待结果。
+- **安全审计**：`securitySubscriber` 订阅 `AUTH_LOGIN_SUCCESS`、`AUTH_VERIFY_COMPLETED`、`AUTH_VERIFY_FAILED`、`SECURITY_ALERT_RAISED`、`USER_BIND_EMAIL_COMPLETED` 等事件，写入审计/告警/通知。
+- **错误处理**：subscriber 内抛出的错误会被事件总线捕获并发布 `EVENT_HANDLER_FAILED`，同时输出到日志，便于监控与排查。
+
+关键文件：
+
+- `src/modules/event-bus/bus.js`：提供 `subscribe`、`publish`、`once`、`publishAndWait`
+- `src/modules/event-bus/events.js`：所有事件名常量
+- `src/modules/event-bus/subscribers/`：领域 subscriber 实现
+- `tests/integration/event-bus-subscribers.spec.js`：subscriber 集成 smoke 测试
 
 ## 测试策略（最小回归护栏）
 
