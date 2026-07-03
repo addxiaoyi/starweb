@@ -64,7 +64,9 @@ async function handleVerifyPremium(bus, deps, store, body) {
       source: 'plugin_callback',
       reason: verified ? 'missing_mojang_uuid' : 'not_verified',
       conflictCode: failResult?.session?.conflictCode || failResult?.code || conflictCode,
-      event: 'verify_premium',
+    }
+    if (!failResult?.ok) {
+      auditDetail.action = 'verify_callback_conflict'
     }
     bus.publish(Events.AUTH_VERIFY_FAILED, {
       store,
@@ -98,7 +100,7 @@ async function handleVerifyPremium(bus, deps, store, body) {
       source: 'plugin_callback',
       reason: 'verify_callback_conflict',
       conflictCode: completeResult?.code || 'unknown',
-      event: 'verify_premium',
+      action: 'verify_callback_conflict',
     }
     bus.publish(Events.AUTH_VERIFY_FAILED, {
       store,
@@ -143,7 +145,7 @@ async function handleVerifyFailed(bus, deps, store, body) {
       reason,
       source: 'plugin_callback',
       conflictCode: failResult?.code || 'unknown',
-      event: 'verify_failed',
+      action: 'verify_callback_conflict',
     }
     bus.publish(Events.AUTH_VERIFY_FAILED, {
       store,
@@ -153,7 +155,7 @@ async function handleVerifyFailed(bus, deps, store, body) {
   }
 }
 
-async function handleLoginSuccess(bus, deps, store, body) {
+function handleLoginSuccess(bus, deps, store, body) {
   const { appendLoginEvent } = deps
   const loginRow = appendLoginEvent(store, body)
   bus.publish(Events.AUTH_LOGIN_SUCCESS, {
@@ -163,7 +165,7 @@ async function handleLoginSuccess(bus, deps, store, body) {
   })
 }
 
-async function handleSecurityAlert(bus, deps, store, body) {
+function handleSecurityAlert(bus, deps, store, body) {
   const { findUserByExternalUserId, ensureSecurityCenter, computeLoginRisk } = deps
   const externalUserId = String(body.external_user_id || '').trim()
   const linkedUser = externalUserId ? findUserByExternalUserId(store, externalUserId) : null
@@ -187,7 +189,7 @@ async function handleSecurityAlert(bus, deps, store, body) {
     location: String(body.location || '').trim() || null,
     isp: String(body.isp || '').trim() || null,
     riskScore: body.risk_score != null ? Number(body.risk_score) : computed.riskScore,
-    riskLevel: computed.riskLevel,
+    riskLevel: String(body.risk_level || '').trim().toLowerCase() || computed.riskLevel,
     deviceProfile: String(body.device_profile || '').trim() || computed.deviceProfile,
     externalUserId: externalUserId || null,
     source: 'plugin_callback',
@@ -251,18 +253,12 @@ export function registerAuthSubscriber(bus, deps) {
 
     if (event === 'verify_premium') {
       await handleVerifyPremium(bus, deps, store, body)
-    }
-
-    if (event === 'verify_failed' || event === 'verify_premium_failed') {
+    } else if (event === 'verify_failed' || event === 'verify_premium_failed') {
       await handleVerifyFailed(bus, deps, store, body)
-    }
-
-    if (event === 'login_success') {
-      await handleLoginSuccess(bus, deps, store, body)
-    }
-
-    if (event === 'security_alert') {
-      await handleSecurityAlert(bus, deps, store, body)
+    } else if (event === 'login_success') {
+      handleLoginSuccess(bus, deps, store, body)
+    } else if (event === 'security_alert') {
+      handleSecurityAlert(bus, deps, store, body)
     }
   })
 }

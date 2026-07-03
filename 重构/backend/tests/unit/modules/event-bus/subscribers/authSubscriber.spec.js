@@ -277,6 +277,37 @@ describe('authSubscriber', () => {
     assert.strictEqual(event.auditDetail.reason, 'server_error')
   })
 
+  it('verify_failed with failMcVerifySession ok=false sets action verify_callback_conflict', async () => {
+    const localCalls = { failMcVerifySession: [] }
+    const localDeps = makeDeps({
+      failMcVerifySession: (userId, reason, detail) => {
+        localCalls.failMcVerifySession.push({ userId, reason, detail })
+        return { ok: false, code: 'session_already_failed', session: null }
+      },
+    }).deps
+
+    bus = new EventBus()
+    registerAuthSubscriber(bus, localDeps)
+    store = createStore({ users: [createUser()] })
+
+    const failedPromise = waitForEvent(bus, Events.AUTH_VERIFY_FAILED)
+
+    publishCallback(bus, store, {
+      event: 'verify_failed',
+      username: 'Steve',
+      reason: 'premium_expired',
+    })
+
+    const event = await failedPromise
+
+    assert.strictEqual(localCalls.failMcVerifySession.length, 1)
+    assert.strictEqual(event.userId, 'user-1')
+    assert.strictEqual(event.auditDetail.mcUsername, 'steve')
+    assert.strictEqual(event.auditDetail.reason, 'premium_expired')
+    assert.strictEqual(event.auditDetail.conflictCode, 'session_already_failed')
+    assert.strictEqual(event.auditDetail.action, 'verify_callback_conflict')
+  })
+
   it('login_success calls appendLoginEvent and publishes AUTH_LOGIN_SUCCESS', async () => {
     const successPromise = waitForEvent(bus, Events.AUTH_LOGIN_SUCCESS)
 
@@ -340,7 +371,7 @@ describe('authSubscriber', () => {
     assert.strictEqual(event.alertPayload.username, 'Steve')
     assert.strictEqual(event.alertPayload.type, 'impossible_travel')
     assert.strictEqual(event.alertPayload.riskScore, 85)
-    assert.strictEqual(event.alertPayload.riskLevel, 'low')
+    assert.strictEqual(event.alertPayload.riskLevel, 'high')
     assert.strictEqual(event.alertPayload.deviceProfile, 'new_device')
   })
 
@@ -394,6 +425,7 @@ describe('authSubscriber', () => {
     assert.strictEqual(event.auditDetail.mcUsername, 'steve')
     assert.strictEqual(event.auditDetail.conflictCode, 'session_not_found')
     assert.strictEqual(event.auditDetail.reason, 'verify_callback_conflict')
+    assert.strictEqual(event.auditDetail.action, 'verify_callback_conflict')
   })
 
   it('unknown event records callback but does not call any deps except record keeping and scheduleSave', async () => {

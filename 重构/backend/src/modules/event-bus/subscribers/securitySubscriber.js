@@ -52,7 +52,8 @@ export function registerSecuritySubscriber(bus, deps) {
   bus.subscribe(Events.AUTH_VERIFY_FAILED, (payload) => {
     const { store, userId, auditDetail } = payload || {}
     if (!auditDetail) return
-    appendSecurityAudit(store, userId, 'verify_failed', auditDetail)
+    const action = auditDetail.action || 'verify_failed'
+    appendSecurityAudit(store, userId, action, auditDetail)
     pushUserNotification(store, userId, {
       type: 'verify_failed',
       title: '正版验证失败',

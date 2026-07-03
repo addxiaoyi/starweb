@@ -201,6 +201,27 @@ describe('securitySubscriber', () => {
     })
   })
 
+  it('uses auditDetail.action when AUTH_VERIFY_FAILED carries verify_callback_conflict', async () => {
+    bus.publish(Events.AUTH_VERIFY_FAILED, {
+      store,
+      userId: 'user-1',
+      auditDetail: {
+        mcUsername: 'steve',
+        reason: 'verify_callback_conflict',
+        source: 'plugin_callback',
+        conflictCode: 'session_not_found',
+        action: 'verify_callback_conflict',
+      },
+    })
+
+    await waitForImmediate()
+
+    assert.strictEqual(calls.appendSecurityAudit.length, 1)
+    assert.strictEqual(calls.appendSecurityAudit[0].action, 'verify_callback_conflict')
+    assert.strictEqual(calls.pushUserNotification.length, 1)
+    assert.strictEqual(calls.pushUserNotification[0].payload.type, 'verify_failed')
+  })
+
   it('falls back to default reason when AUTH_VERIFY_FAILED auditDetail.reason is missing', async () => {
     bus.publish(Events.AUTH_VERIFY_FAILED, {
       store,
