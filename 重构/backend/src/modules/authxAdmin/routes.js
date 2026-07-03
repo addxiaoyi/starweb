@@ -6,6 +6,13 @@ import {
   respondPluginJsonOrText
 } from './service.js'
 
+function normalizeCommandReply(reply) {
+  if (reply && reply.ok === false) {
+    return { ok: false, result: reply.result, error: reply.error }
+  }
+  return { ok: true, result: reply?.result ?? reply }
+}
+
 export function registerAuthxAdminRoutes(app, deps) {
   const {
     requireDevAdmin,
@@ -91,75 +98,116 @@ export function registerAuthxAdminRoutes(app, deps) {
   app.post('/api/admin/authx/reset-password', asyncHandler(async (req, res) => {
     if (!requireDevAdmin(req, res)) return
     const { username, newPassword } = req.body || {}
-    const result = await eventBus.publishAndWait(
+    if (!username) {
+      return jsonErr(res, 400, '缺少 username', 'validation_error')
+    }
+    const reply = await eventBus.publishAndWait(
       Events.VLA_COMMAND_RESET_PASSWORD,
       { body: { username, newPassword } }
     )
-    return respondPluginJson(res, result?.result ?? result)
+    const normalized = normalizeCommandReply(reply)
+    if (!normalized.ok) {
+      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
+    }
+    return respondPluginJson(res, normalized.result)
   }))
 
   app.post('/api/admin/authx/bind-email', asyncHandler(async (req, res) => {
     if (!requireDevAdmin(req, res)) return
     const { username, email } = req.body || {}
-    const result = await eventBus.publishAndWait(
+    if (!username) {
+      return jsonErr(res, 400, '缺少 username', 'validation_error')
+    }
+    const reply = await eventBus.publishAndWait(
       Events.VLA_COMMAND_BIND_EMAIL,
       { body: { username, email } }
     )
-    return respondPluginJson(res, result?.result ?? result)
+    const normalized = normalizeCommandReply(reply)
+    if (!normalized.ok) {
+      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
+    }
+    return respondPluginJson(res, normalized.result)
   }))
 
   app.post('/api/admin/authx/unbind-device', asyncHandler(async (req, res) => {
     if (!requireDevAdmin(req, res)) return
     const { username, device } = req.body || {}
-    const result = await eventBus.publishAndWait(
+    if (!username) {
+      return jsonErr(res, 400, '缺少 username', 'validation_error')
+    }
+    const reply = await eventBus.publishAndWait(
       Events.VLA_COMMAND_UNBIND_DEVICE,
       { body: { username, device } }
     )
-    return respondPluginJson(res, result?.result ?? result)
+    const normalized = normalizeCommandReply(reply)
+    if (!normalized.ok) {
+      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
+    }
+    return respondPluginJson(res, normalized.result)
   }))
 
   app.post('/api/admin/authx/kick-online', asyncHandler(async (req, res) => {
     if (!requireDevAdmin(req, res)) return
-    const result = await eventBus.publishAndWait(
+    const reply = await eventBus.publishAndWait(
       Events.VLA_COMMAND_KICK_ONLINE,
       { body: req.body || {} }
     )
-    return respondPluginJson(res, result?.result ?? result)
+    const normalized = normalizeCommandReply(reply)
+    if (!normalized.ok) {
+      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
+    }
+    return respondPluginJson(res, normalized.result)
   }))
 
   app.post('/api/admin/authx/ban', asyncHandler(async (req, res) => {
     if (!requireDevAdmin(req, res)) return
-    const result = await eventBus.publishAndWait(
+    const reply = await eventBus.publishAndWait(
       Events.VLA_COMMAND_BAN,
       { body: req.body || {} }
     )
-    return respondPluginJson(res, result?.result ?? result)
+    const normalized = normalizeCommandReply(reply)
+    if (!normalized.ok) {
+      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
+    }
+    return respondPluginJson(res, normalized.result)
   }))
 
   app.post('/api/admin/authx/delete-user', asyncHandler(async (req, res) => {
     if (!requireDevAdmin(req, res)) return
-    const result = await eventBus.publishAndWait(
+    const reply = await eventBus.publishAndWait(
       Events.VLA_COMMAND_DELETE_USER,
       { body: req.body || {} }
     )
-    return respondPluginJson(res, result?.result ?? result)
+    const normalized = normalizeCommandReply(reply)
+    if (!normalized.ok) {
+      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
+    }
+    return respondPluginJson(res, normalized.result)
   }))
 
   app.post('/api/admin/authx/skin-refresh', asyncHandler(async (req, res) => {
     if (!requireDevAdmin(req, res)) return
-    const result = await eventBus.publishAndWait(
+    const reply = await eventBus.publishAndWait(
       Events.VLA_COMMAND_SKIN_REFRESH,
       { body: req.body || {} }
     )
-    return respondPluginJson(res, result?.result ?? result)
+    const normalized = normalizeCommandReply(reply)
+    if (!normalized.ok) {
+      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
+    }
+    return respondPluginJson(res, normalized.result)
   }))
 
   app.post('/api/admin/authx/link-external-user', asyncHandler(async (req, res) => {
     if (!requireDevAdmin(req, res)) return
-    const result = await eventBus.publishAndWait(
+    const reply = await eventBus.publishAndWait(
       Events.VLA_COMMAND_LINK_EXTERNAL_USER,
       { body: req.body || {} }
     )
-    return respondPluginJson(res, result?.result ?? result)
+    const normalized = normalizeCommandReply(reply)
+    if (!normalized.ok) {
+      return jsonErr(res, normalized.result?.status || 502, normalized.error || '插件命令执行失败', 'plugin_command_failed', normalized.result?.json)
+    }
+    return respondPluginJson(res, normalized.result)
   }))
 }
