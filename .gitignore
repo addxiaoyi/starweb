@@ -87,3 +87,14 @@ target/
 
 # Worktrees
 .worktrees/
+
+# StarX Plugins (independent repo)
+starx-plugins/
+
+# Reference plugins (not project source)
+插件开发/
+
+# Local dev tools
+velocity-test/
+.trae/
+.trae-html-share-packages/

@@ -1,46 +1,50 @@
 #Requires -Version 5.1
-param(
-    [ValidateSet('auto', 'default', 'velocity35')]
-    [string] $Variant = 'auto'
-)
-
-# 将 velocity-limbo-auth 模块构建的 jar 复制到本目录 plugins/
-# default: Java17 / Velocity 3.4 API
-# velocity35: Java21 / Velocity 3.5 API
+# 将 StarX 插件构建的 jar 复制到本目录 plugins/
 $ErrorActionPreference = "Stop"
 $here = $PSScriptRoot
-$moduleRoot = Join-Path $here "..\velocity-limbo-auth"
+$starxRoot = Join-Path $here "..\starx-plugins"
 $targetDir = Join-Path $here "plugins"
-if (-not (Test-Path $moduleRoot)) {
-    Write-Host "未找到 velocity-limbo-auth 目录: $moduleRoot" -ForegroundColor Red
+
+if (-not (Test-Path $starxRoot)) {
+    Write-Host "未找到 starx-plugins 目录: $starxRoot" -ForegroundColor Red
     exit 1
 }
-$targetRoot = Join-Path $moduleRoot "target"
-$pattern = switch ($Variant) {
-    'default' { 'StarVelocity-4.0.0.jar' }
-    'velocity35' { 'StarVelocity-4.0.0-velocity35-java21.jar' }
-    default { 'StarVelocity-*.jar' }
-}
-$jars = Get-ChildItem -Path $targetRoot -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -like $pattern -or ($Variant -eq 'auto' -and $_.Name -like "Velocity-Limbo-Auth*.jar") } |
-    Where-Object { $_.Name -notmatch "original|shaded" } |
-    Sort-Object LastWriteTime -Descending
-if (-not $jars) {
-    Write-Host "未找到构建产物: $pattern" -ForegroundColor Yellow
-    Write-Host "默认构建:  在 velocity-limbo-auth 目录执行 mvn -U clean package" -ForegroundColor Yellow
-    Write-Host "Velocity 3.5: 在 velocity-limbo-auth 目录执行 mvn -U -Pvelocity35 clean package" -ForegroundColor Yellow
-    exit 1
-}
-$src = $jars[0]
+
 if (-not (Test-Path $targetDir)) {
     New-Item -ItemType Directory -Path $targetDir | Out-Null
 }
 
+# 清理旧的 StarVelocity / StarX JAR
 Get-ChildItem -Path $targetDir -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -like "StarVelocity-*.jar" -or $_.Name -like "Velocity-Limbo-Auth*.jar" } |
+    Where-Object { $_.Name -like "StarVelocity-*.jar" -or $_.Name -like "starx-*.jar" } |
     Remove-Item -Force
 
-$dest = Join-Path $targetDir $src.Name
-Copy-Item -LiteralPath $src.FullName -Destination $dest -Force
-Write-Host "已复制: $($src.Name) -> plugins\" -ForegroundColor Green
-Write-Host "  来源: $($src.FullName)"
+# 复制 StarX Velocity 插件
+$velocityJar = Join-Path $starxRoot "starx-velocity\build\libs\starx-velocity-*-all.jar"
+$velocityFiles = Get-ChildItem -Path $velocityJar -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -notmatch "original|shaded" } |
+    Sort-Object LastWriteTime -Descending
+
+if ($velocityFiles) {
+    $src = $velocityFiles[0]
+    $dest = Join-Path $targetDir $src.Name
+    Copy-Item -LiteralPath $src.FullName -Destination $dest -Force
+    Write-Host "已复制 Velocity: $($src.Name) -> plugins\" -ForegroundColor Green
+} else {
+    Write-Host "未找到 starx-velocity JAR，请先运行: cd starx-plugins && ./gradlew :starx-velocity:shadowJar" -ForegroundColor Yellow
+}
+
+# 复制 StarX Paper 插件
+$paperJar = Join-Path $starxRoot "starx-paper\build\libs\starx-paper-*-all.jar"
+$paperFiles = Get-ChildItem -Path $paperJar -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -notmatch "original|shaded" } |
+    Sort-Object LastWriteTime -Descending
+
+if ($paperFiles) {
+    $src = $paperFiles[0]
+    $dest = Join-Path $targetDir $src.Name
+    Copy-Item -LiteralPath $src.FullName -Destination $dest -Force
+    Write-Host "已复制 Paper:   $($src.Name) -> plugins\" -ForegroundColor Green
+} else {
+    Write-Host "未找到 starx-paper JAR，请先运行: cd starx-plugins && ./gradlew :starx-paper:shadowJar" -ForegroundColor Yellow
+}
