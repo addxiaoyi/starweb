@@ -4,17 +4,15 @@ import { config } from '../../config.js'
 /**
  * 入站插件 webhook 适配器选择策略：
  * - 优先按请求头识别（X-VLA-Signature → vla，X-AuthX-Signature → authx）。
- * - 当未识别到任何适配器头但配置了 AuthX callback secret 时，detectInboundAdapter 返回 authx；
- *   这是为了兼容旧版 AuthX 插件在 secret 模式下不强制发送 X-AuthX-Signature 的行为。
+ * - 当未识别到适配器头但配置了 AuthX callback secret 或请求头有 X-AuthX-Signature 时回退 authx。
  * - 当未配置任何密钥时，verifyPluginInboundWebhook 返回 true，保留开发环境放行行为。
  *
  * @param {import('express').Request} req
  * @param {object} [configOverride] - 可选配置覆盖；未提供时使用全局 config
  */
-export function detectInboundAdapter(req, configOverride) {
-  const cfg = configOverride || config
+export function detectInboundAdapter(req) {
   if (String(req.headers['x-vla-signature'] || '').trim()) return 'vla'
-  if (cfg.authxCallbackSecret || req.headers['x-authx-signature']) return 'authx'
+  if (req.headers['x-authx-signature']) return 'authx'
   return null
 }
 
@@ -33,7 +31,7 @@ export function isPluginWebhookAuthConfigured(configOverride) {
  */
 export function verifyPluginInboundWebhook(req, rawPayload, configOverride) {
   const cfg = configOverride || config
-  const adapter = detectInboundAdapter(req, cfg)
+  const adapter = detectInboundAdapter(req)
   if (adapter === 'vla') {
     const sig = String(req.headers['x-vla-signature'] || '').trim()
     return verifyVlaHexSignatureAny(cfg.authxVlaWebhookSecrets, sig, rawPayload)

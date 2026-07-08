@@ -1,0 +1,42 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+stats.html
+*.local
+
+# Project-local runtime (no-systemd deployment)
+.runtime/
+deploy/linux/project-local.env
+backend/.env.project-local
+
+.eslintcache
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# Docker 离线镜像包（体积大，本地用脚本生成后保留即可）
+artifacts/starmc-offline-images.tar

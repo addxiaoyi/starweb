@@ -85,8 +85,10 @@ import { registerMapHealthRoutes } from './modules/ops/mapHealth.js'
 import { registerSkinRefreshRoutes } from './modules/plugin-gateway/skinRefresh.js'
 import { registerPluginGatewayRoutes } from './modules/plugin-gateway/index.js'
 import { isPluginWebhookAuthConfigured } from './modules/plugin-gateway/adapter.js'
-import { EventBus } from './modules/event-bus/index.js'
+import { EventBus, Events } from './modules/event-bus/index.js'
 import { registerVlaCommandSubscriber } from './modules/event-bus/subscribers/vlaCommandSubscriber.js'
+import { sleep, computeBackoffSec, CIRCUIT_BREAKER } from './modules/plugin-gateway/constants.js'
+import { mapPluginAdminRequest } from './modules/plugin-gateway/mapPluginAdminRequest.js'
 import { registerAuthSubscriber } from './modules/event-bus/subscribers/authSubscriber.js'
 import { registerBindEmailSubscriber } from './modules/event-bus/subscribers/bindEmailSubscriber.js'
 import { registerSkinRefreshSubscriber } from './modules/event-bus/subscribers/skinRefreshSubscriber.js'
@@ -117,127 +119,152 @@ function warnAuthxAdapterDeprecated() {
   console.warn('[starmc-api] authx adapter is deprecated, only vla is supported')
 }
 
-/**
- * 将站点统一 Admin 契约映射到各插件实现（AuthX / VLA）。
- */
-function mapPluginAdminRequest(apiPath, body) {
-  const isVla = config.authxPluginAdapter === 'vla'
-  if (!isVla) {
-    warnAuthxAdapterDeprecated()
-    return { path: apiPath, body: body || {}, extraHeaders: {} }
+const MAX_PLUGIN_BODY_SIZE = 1024 * 1024
+
+const circuitState = { failures: 0, isOpen: false, halfOpenAfter: 0 }
+
+const pluginFetchCounters = { total: 0, success: 0, failed: 0, history: [] }
+
+/** @type {Array<{ event: string, errorMessage: string, timestamp: string }>} */
+const eventHandlerFailures = []
+
+function isCircuitOpen() {
+  if (!circuitState.isOpen) return false
+  if (Date.now() >= circuitState.halfOpenAfter) {
+    circuitState.isOpen = false
+    return false
   }
-  const extraHeaders = {}
-  if (config.authxVlaApiKey) {
-    extraHeaders['X-API-Key'] = config.authxVlaApiKey
+  return true
+}
+
+function recordCircuitSuccess() {
+  circuitState.failures = 0
+  circuitState.isOpen = false
+  persistCircuitState()
+}
+
+function recordPluginFetchEvent(ok, latencyMs) {
+  if (pluginFetchCounters.history.length >= 2000) {
+    pluginFetchCounters.history.splice(0, pluginFetchCounters.history.length - 1500)
   }
-  if (apiPath.endsWith('/admin/reset-password')) {
-    const { username, newPassword } = body || {}
-    return {
-      path: '/v1/admin/password',
-      body: { username, password: newPassword },
-      extraHeaders
+  pluginFetchCounters.history.push({ ts: Date.now(), ok, latencyMs })
+}
+
+function recordCircuitFailure() {
+  circuitState.failures++
+  if (circuitState.failures >= CIRCUIT_BREAKER.FAILURE_THRESHOLD) {
+    circuitState.isOpen = true
+    circuitState.halfOpenAfter = Date.now() + CIRCUIT_BREAKER.HALF_OPEN_MS
+  }
+  persistCircuitState()
+}
+
+function persistCircuitState() {
+  try {
+    const store = getStore()
+    if (!store) return
+    store.circuitState = {
+      failures: circuitState.failures,
+      isOpen: circuitState.isOpen,
+      halfOpenAfter: circuitState.halfOpenAfter,
     }
+    markKvDirty('circuit_state')
+    scheduleSave()
+  } catch (e) {
+    console.error('[starmc-api] 持久化断路器状态失败:', e?.message || e)
   }
-  if (apiPath.endsWith('/admin/bind-email')) {
-    return { path: '/v1/admin/bind-email', body: body || {}, extraHeaders }
-  }
-  if (apiPath.endsWith('/admin/unbind-device')) {
-    const { username, device } = body || {}
-    return {
-      path: '/v1/admin/unbind-device',
-      body: { username, fingerprint: device == null ? '' : String(device) },
-      extraHeaders
-    }
-  }
-  if (apiPath === '/internal/v1/link/external-user') {
-    const { username, external_user_id: ext } = body || {}
-    return {
-      path: '/v1/link/external-user',
-      body: { username, external_user_id: ext },
-      extraHeaders
-    }
-  }
-  if (apiPath.endsWith('/admin/kick-online')) {
-    return { path: '/v1/admin/kick-online', body: body || {}, extraHeaders }
-  }
-  if (apiPath.endsWith('/admin/ban')) {
-    return { path: '/v1/admin/ban', body: body || {}, extraHeaders }
-  }
-  if (apiPath.endsWith('/admin/delete-user')) {
-    return { path: '/v1/admin/delete-user', body: body || {}, extraHeaders }
-  }
-  if (apiPath.endsWith('/admin/skin-refresh')) {
-    return { path: '/v1/skin/refresh', body: body || {}, extraHeaders }
-  }
-  if (apiPath.endsWith('/admin/link-external-user')) {
-    const { username, external_user_id: ext } = body || {}
-    return {
-      path: '/v1/link/external-user',
-      body: { username, external_user_id: ext },
-      extraHeaders
-    }
-  }
-  return { path: apiPath, body: body || {}, extraHeaders }
 }
 
 async function pluginFetchJson(apiPath, body) {
-  const mapped = mapPluginAdminRequest(apiPath, body)
+  if (isCircuitOpen()) {
+    return { status: 503, json: { ok: false, error: 'circuit_open', detail: '插件服务暂时不可用（断路器已打开）' } }
+  }
+
+  const startMs = Date.now()
+  const mapped = mapPluginAdminRequest(apiPath, body, config, warnAuthxAdapterDeprecated)
   const base = String(config.authxPluginBase || '').replace(/\/+$/, '')
   const url = base + mapped.path
   const payload = JSON.stringify(mapped.body || {})
-  const ctrl = new AbortController()
-  const t = setTimeout(() => ctrl.abort(), config.authxPluginRequestMs)
-  try {
-    const headers = {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      ...mapped.extraHeaders
+
+  let lastError
+  for (let attempt = 0; attempt <= CIRCUIT_BREAKER.MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      const delay = Math.min(5000, CIRCUIT_BREAKER.BASE_DELAY_MS * 2 ** (attempt - 1) + Math.random() * 200)
+      await sleep(delay)
     }
-    if (
-      config.authxPluginAdapter === 'vla' &&
-      config.authxVlaHmacSecret
-    ) {
-      const ts = Math.floor(Date.now() / 1000).toString()
-      const sig = crypto
-        .createHmac('sha256', config.authxVlaHmacSecret)
-        .update(`${ts}\n${payload}`, 'utf8')
-        .digest('hex')
-      headers['X-VLA-Timestamp'] = ts
-      headers['X-VLA-Signature'] = sig
-    }
-    if (config.authxPluginAdapter !== 'vla' && config.authxAdminSecret) {
-      warnAuthxAdapterDeprecated()
-      headers['X-AuthX-Admin-Secret'] = config.authxAdminSecret
-    }
-    const r = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: payload,
-      signal: ctrl.signal
-    })
-    const text = await r.text()
-    let json = {}
-    if (text) {
-      try {
-        json = JSON.parse(text)
-      } catch {
-        json = { ok: false, error: 'invalid_json' }
+
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), config.authxPluginRequestMs)
+    try {
+      const headers = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...mapped.extraHeaders
       }
-    }
-    return { status: r.status, json }
-  } catch (e) {
-    const aborted = e?.name === 'AbortError'
-    return {
-      status: aborted ? 504 : 502,
-      json: {
-        ok: false,
-        error: aborted ? 'plugin_timeout' : 'plugin_unreachable',
-        detail: String(e?.message || e)
+      if (config.authxPluginAdapter === 'vla' && config.authxVlaHmacSecret) {
+        const ts = Math.floor(Date.now() / 1000).toString()
+        const sig = crypto
+          .createHmac('sha256', config.authxVlaHmacSecret)
+          .update(`${ts}\n${payload}`, 'utf8')
+          .digest('hex')
+        headers['X-VLA-Timestamp'] = ts
+        headers['X-VLA-Signature'] = sig
       }
+      if (config.authxPluginAdapter !== 'vla' && config.authxAdminSecret) {
+        warnAuthxAdapterDeprecated()
+        headers['X-AuthX-Admin-Secret'] = config.authxAdminSecret
+      }
+      const r = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: payload,
+        signal: ctrl.signal
+      })
+      const text = await r.text()
+      let json = {}
+      if (text) {
+        try {
+          json = JSON.parse(text)
+        } catch {
+          json = { ok: false, error: 'invalid_json' }
+        }
+      }
+      const latencyMs = Date.now() - startMs
+      if (r.status < 500 || attempt === CIRCUIT_BREAKER.MAX_RETRIES) {
+        pluginFetchCounters.total++
+        if (r.status < 500) {
+          recordCircuitSuccess()
+          pluginFetchCounters.success++
+          recordPluginFetchEvent(true, latencyMs)
+        } else {
+          recordCircuitFailure()
+          pluginFetchCounters.failed++
+          recordPluginFetchEvent(false, latencyMs)
+        }
+        return { status: r.status, json }
+      }
+      pluginFetchCounters.total++
+      pluginFetchCounters.failed++
+      recordPluginFetchEvent(false, latencyMs)
+      lastError = { status: r.status, json }
+    } catch (e) {
+      const aborted = e?.name === 'AbortError'
+      lastError = {
+        status: aborted ? 504 : 502,
+        json: { ok: false, error: aborted ? 'plugin_timeout' : 'plugin_unreachable', detail: String(e?.message || e) }
+      }
+      /* 不在 catch 中递增计数器，由后续 attempt 或 loop 结束后统一记录 */
+    } finally {
+      clearTimeout(t)
     }
-  } finally {
-    clearTimeout(t)
   }
+
+  /* 所有重试均失败时统一记录 */
+  pluginFetchCounters.total++
+  pluginFetchCounters.failed++
+  recordCircuitFailure()
+  recordPluginFetchEvent(false, Date.now() - startMs)
+  return lastError
 }
 
 function jsonErr(res, status, message, code = 'error', details) {
@@ -1279,13 +1306,13 @@ async function processWebhookQueue(store) {
           } else {
             item.lastError = `http_${resp.status}`
             item.status = 'pending'
-            const backoffSec = Math.min(300, 2 ** attempts)
+            const backoffSec = computeBackoffSec(attempts)
             item.nextRetryAt = new Date(Date.now() + backoffSec * 1000).toISOString()
           }
         } catch (err) {
           item.lastError = String(err?.message || err?.code || 'delivery_failed')
           item.status = 'pending'
-          const backoffSec = Math.min(300, 2 ** attempts)
+          const backoffSec = computeBackoffSec(attempts)
           item.nextRetryAt = new Date(Date.now() + backoffSec * 1000).toISOString()
         }
       } else {
@@ -1298,7 +1325,7 @@ async function processWebhookQueue(store) {
 
     item.lastError = 'webhook_secret_missing'
     item.status = 'pending'
-    const backoffSec = Math.min(300, 2 ** attempts)
+    const backoffSec = computeBackoffSec(attempts)
     item.nextRetryAt = new Date(Date.now() + backoffSec * 1000).toISOString()
     securityCenterChanged = true
   }
@@ -1420,6 +1447,18 @@ function registerEventBusSubscribers(eventBus, deps) {
     appendSecurityAlert,
     pushUserNotification,
     scheduleSave,
+  })
+
+  eventBus.subscribe(Events.EVENT_HANDLER_FAILED, ({ event, error, payload }) => {
+    const entry = { event, errorMessage: error?.message || String(error), timestamp: new Date().toISOString() }
+    eventHandlerFailures.unshift(entry)
+    if (eventHandlerFailures.length > 100) eventHandlerFailures.length = 100
+    logger.error?.('[event-bus] subscriber handler failed', {
+      event,
+      errorMessage: error?.message || String(error),
+      errorStack: error?.stack,
+      hasPayload: !!payload,
+    })
   })
 }
 
@@ -2656,7 +2695,6 @@ function createApiApp({ eventBus }) {
           }
         }
         if (r.status >= 200 && r.status < 300) {
-          clearTimeout(t)
           return last
         }
       } catch (e) {
@@ -2705,14 +2743,14 @@ function createApiApp({ eventBus }) {
         headers['X-AuthX-Admin-Secret'] = config.authxAdminSecret
       }
       const r = await fetch(url, { method: 'GET', signal: ctrl.signal, headers })
-      const text = await r.text()
+      let text = await r.text()
+      if (text.length > MAX_PLUGIN_BODY_SIZE) {
+        text = text.slice(0, MAX_PLUGIN_BODY_SIZE)
+      }
       let json
       const ct = (r.headers.get('content-type') || '').toLowerCase()
       const ttrim = text.trim()
-      if (
-        ttrim &&
-        (ct.includes('application/json') || ttrim.startsWith('{') || ttrim.startsWith('['))
-      ) {
+      if (ttrim && ct.includes('application/json')) {
         try {
           json = JSON.parse(ttrim)
         } catch {
@@ -2963,6 +3001,13 @@ function createApiApp({ eventBus }) {
     jsonErr,
     jsonOk,
     eventBus,
+    circuitBreakerStatus: {
+      failures: circuitState.failures,
+      isOpen: circuitState.isOpen,
+      halfOpenAfter: circuitState.halfOpenAfter,
+    },
+    pluginFetchCounters,
+    eventHandlerFailures,
   })
 
   function normalizeDashboardConfig(input) {
@@ -4379,6 +4424,12 @@ async function main() {
       await hydrateUserProfilesFromPg(st)
       await hydrateSubmissionsFromPg(st)
       await hydrateStoreKvFromPg(st)
+      if (st.circuitState && typeof st.circuitState === 'object') {
+        circuitState.failures = Math.max(0, Number(st.circuitState.failures || 0))
+        circuitState.isOpen = Boolean(st.circuitState.isOpen)
+        circuitState.halfOpenAfter = Number(st.circuitState.halfOpenAfter || 0)
+        console.log(`[starmc-api] 已恢复断路器状态: failures=${circuitState.failures} isOpen=${circuitState.isOpen}`)
+      }
       if (config.pgKvSyncOnStart) {
         for (const k of STORE_KV_KEYS) {
           markKvDirty(k)

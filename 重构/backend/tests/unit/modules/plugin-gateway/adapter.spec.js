@@ -41,9 +41,17 @@ describe('plugin-gateway adapter', () => {
       )
     })
 
-    it('returns authx when AuthX secret is configured', () => {
+    it('returns authx when X-AuthX-Signature header is present with config', () => {
       config.authxCallbackSecret = 'configured-secret'
-      assert.strictEqual(detectInboundAdapter({ headers: {} }), 'authx')
+      assert.strictEqual(
+        detectInboundAdapter({ headers: { 'x-authx-signature': 'sig' } }),
+        'authx'
+      )
+    })
+
+    it('returns null when AuthX config is set but no authx header is present', () => {
+      config.authxCallbackSecret = 'configured-secret'
+      assert.strictEqual(detectInboundAdapter({ headers: {} }), null)
     })
 
     it('returns null when no adapter headers or config are present', () => {

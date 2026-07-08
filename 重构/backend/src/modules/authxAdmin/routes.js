@@ -13,11 +13,26 @@ function normalizeCommandReply(reply) {
   return { ok: true, result: reply?.result ?? reply }
 }
 
+function requireVlaAdapter(config, jsonErr, res) {
+  if (config.authxPluginAdapter !== 'vla') {
+    jsonErr(res, 400, '当前接口仅支持 VLA 适配器', 'vla_adapter_required')
+    return false
+  }
+  return true
+}
+
 function registerCommandRoute(app, deps, { path, event, validate }) {
-  app.post(path, asyncHandler(async (req, res) => {
+  const middlewares = []
+  if (typeof deps.adminPluginGetLimiter === 'function') {
+    middlewares.push(deps.adminPluginGetLimiter)
+  }
+  app.post(path, ...middlewares, asyncHandler(async (req, res) => {
     if (!deps.requireDevAdmin(req, res)) return
     const validationError = validate ? validate(req.body || {}) : null
     if (validationError) return deps.jsonErr(res, 400, validationError.message, validationError.code)
+    if (!deps.eventBus.hasSubscribers(event)) {
+      return deps.jsonErr(res, 503, `没有注册 ${event} 的处理程序，请检查插件适配器配置`, 'no_subscriber')
+    }
     try {
       const reply = await deps.eventBus.publishAndWait(event, { body: req.body || {} })
       const normalized = normalizeCommandReply(reply)
@@ -40,14 +55,82 @@ export function registerAuthxAdminRoutes(app, deps) {
     adminPluginGetLimiter,
     jsonErr,
     jsonOk,
+    circuitBreakerStatus,
+    pluginFetchCounters,
+    eventHandlerFailures,
   } = deps
   const okResponse = jsonOk
+
+  app.get('/api/admin/authx/circuit-breaker', asyncHandler(async (req, res) => {
+    if (!requireDevAdmin(req, res)) return
+    const now = Date.now()
+    const counters = { ...pluginFetchCounters }
+    delete counters.history
+    return okResponse(res, {
+      failures: circuitBreakerStatus?.failures ?? 0,
+      isOpen: circuitBreakerStatus?.isOpen ?? false,
+      halfOpenAfter: circuitBreakerStatus?.halfOpenAfter ?? 0,
+      remainingCooldownMs: circuitBreakerStatus?.isOpen
+        ? Math.max(0, (circuitBreakerStatus.halfOpenAfter || 0) - now)
+        : 0,
+      counters,
+      recentHandlerFailures: eventHandlerFailures?.slice(0, 20) ?? [],
+    })
+  }))
+
+  app.get('/api/admin/authx/plugin-stats', asyncHandler(async (req, res) => {
+    if (!requireDevAdmin(req, res)) return
+    const history = Array.isArray(pluginFetchCounters?.history) ? pluginFetchCounters.history : []
+    const now = Date.now()
+    const range = String(req.query.range || '').trim()
+    const trendCfg =
+      range === '15m' ? { bucketMs: 60 * 1000, count: 15 }
+      : range === '1h' ? { bucketMs: 5 * 60 * 1000, count: 12 }
+      : { bucketMs: 60 * 60 * 1000, count: 24 }
+    const bucketStart = now - trendCfg.bucketMs * trendCfg.count
+    const trend = Array.from({ length: trendCfg.count }, (_, i) => {
+      const start = bucketStart + i * trendCfg.bucketMs
+      return { ts: new Date(start).toISOString(), total: 0, success: 0, failed: 0, successRate: 0 }
+    })
+    for (const ev of history) {
+      const t = Number(ev?.ts || 0)
+      if (!Number.isFinite(t) || t < bucketStart || t >= now) continue
+      const idx = Math.floor((t - bucketStart) / trendCfg.bucketMs)
+      if (idx < 0 || idx >= trend.length) continue
+      trend[idx].total += 1
+      if (ev?.ok === true) trend[idx].success += 1
+      else trend[idx].failed += 1
+    }
+    for (const b of trend) {
+      b.successRate = b.total > 0 ? Number(((b.success / b.total) * 100).toFixed(2)) : 0
+    }
+    const latencies = history
+      .map((x) => Number(x?.latencyMs || 0))
+      .filter((n) => Number.isFinite(n) && n >= 0)
+      .sort((a, b) => a - b)
+    function percentile(arr, p) {
+      if (arr.length === 0) return 0
+      const idx = Math.min(arr.length - 1, Math.max(0, Math.ceil((p / 100) * arr.length) - 1))
+      return arr[idx]
+    }
+    return okResponse(res, {
+      total: history.length,
+      latency: {
+        p50: percentile(latencies, 50),
+        p95: percentile(latencies, 95),
+        p99: percentile(latencies, 99),
+        max: latencies.length > 0 ? latencies[latencies.length - 1] : 0,
+      },
+      trend,
+    })
+  }))
 
   app.get('/api/admin/authx/plugin-health', asyncHandler(async (req, res) => {
     if (!requireDevAdmin(req, res)) return
     const probe = await pluginFetchHealth()
+    const safeProbe = { reachable: Boolean(probe?.reachable), status: Number(probe?.status ?? 0) || null }
     const ok = probe.reachable && probe.status >= 200 && probe.status < 300
-    if (ok) return okResponse(res, { plugin: probe })
+    if (ok) return okResponse(res, { plugin: safeProbe })
     return res.status(502).json({
       ok: false,
       success: false,
@@ -58,15 +141,12 @@ export function registerAuthxAdminRoutes(app, deps) {
         reachable: Boolean(probe?.reachable),
         status: Number(probe?.status ?? 0) || null,
       },
-      plugin: probe
     })
   }))
 
   app.get('/api/admin/authx/plugin-metrics', asyncHandler(async (req, res) => {
     if (!requireDevAdmin(req, res)) return
-    if (config.authxPluginAdapter !== 'vla') {
-      return jsonErr(res, 400, '当前接口仅支持 VLA 适配器', 'plugin_metrics_requires_vla')
-    }
+    if (!requireVlaAdapter(config, jsonErr, res)) return
     const r = await pluginFetchGet('/v1/metrics/prometheus')
     res
       .status(normalizeProxyStatus(r.status))
@@ -74,39 +154,23 @@ export function registerAuthxAdminRoutes(app, deps) {
       .send(r.text || '')
   }))
 
-  app.get(
-    '/api/admin/authx/ban-check',
-    adminPluginGetLimiter,
-    asyncHandler(async (req, res) => {
-      if (!requireDevAdmin(req, res)) return
-      if (config.authxPluginAdapter !== 'vla') {
-        return jsonErr(res, 400, '当前接口仅支持 VLA 适配器', 'vla_adapter_required')
-      }
-      const name = String(req.query.name || '').trim()
-      if (!name) {
-        return jsonErr(res, 400, '缺少 name', 'validation_error')
-      }
-      const r = await pluginFetchGet('/v1/ban', { name })
-      return respondPluginJsonOrText(res, r)
-    })
-  )
+  app.get('/api/admin/authx/ban-check', adminPluginGetLimiter, asyncHandler(async (req, res) => {
+    if (!requireDevAdmin(req, res)) return
+    if (!requireVlaAdapter(config, jsonErr, res)) return
+    const name = String(req.query.name || '').trim()
+    if (!name) return jsonErr(res, 400, '缺少 name', 'validation_error')
+    const r = await pluginFetchGet('/v1/ban', { name })
+    return respondPluginJsonOrText(res, r)
+  }))
 
-  app.get(
-    '/api/admin/authx/user-exists',
-    adminPluginGetLimiter,
-    asyncHandler(async (req, res) => {
-      if (!requireDevAdmin(req, res)) return
-      if (config.authxPluginAdapter !== 'vla') {
-        return jsonErr(res, 400, '当前接口仅支持 VLA 适配器', 'vla_adapter_required')
-      }
-      const name = String(req.query.name || '').trim()
-      if (!name) {
-        return jsonErr(res, 400, '缺少 name', 'validation_error')
-      }
-      const r = await pluginFetchGet('/v1/user/exists', { name })
-      return respondPluginJsonOrText(res, r)
-    })
-  )
+  app.get('/api/admin/authx/user-exists', adminPluginGetLimiter, asyncHandler(async (req, res) => {
+    if (!requireDevAdmin(req, res)) return
+    if (!requireVlaAdapter(config, jsonErr, res)) return
+    const name = String(req.query.name || '').trim()
+    if (!name) return jsonErr(res, 400, '缺少 name', 'validation_error')
+    const r = await pluginFetchGet('/v1/user/exists', { name })
+    return respondPluginJsonOrText(res, r)
+  }))
 
   registerCommandRoute(app, deps, {
     path: '/api/admin/authx/reset-password',

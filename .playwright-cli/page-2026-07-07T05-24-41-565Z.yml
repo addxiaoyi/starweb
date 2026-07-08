@@ -1,0 +1,162 @@
+- generic [ref=e2]:
+  - banner [ref=e9]:
+    - navigation [ref=e10]:
+      - generic [ref=e11]:
+        - img [ref=e12]
+        - generic [ref=e15]: StarX
+      - generic [ref=e16]:
+        - link "账号" [ref=e17] [cursor=pointer]:
+          - /url: /dashboard
+        - link "管理" [ref=e18] [cursor=pointer]:
+          - /url: /admin
+        - link "接入" [ref=e19] [cursor=pointer]:
+          - /url: /applications
+        - link "登录" [ref=e20] [cursor=pointer]:
+          - /url: /sign-in
+  - generic [ref=e21]:
+    - generic [ref=e23]:
+      - generic [ref=e24]:
+        - generic [ref=e26]: 安全认证
+        - generic [ref=e27]: "|"
+        - generic [ref=e28]: 开源免费
+      - heading "你的账号 安全中心" [level=1] [ref=e29]:
+        - generic [ref=e30]: 你的账号
+        - generic [ref=e31]: 安全中心
+      - paragraph [ref=e32]:
+        - text: 统一身份认证，集中授权管理。
+        - text: 为每一个应用保驾护航。
+      - generic [ref=e33]:
+        - link "开始使用" [ref=e34] [cursor=pointer]:
+          - /url: /sign-up
+          - text: 开始使用
+          - img [ref=e35]
+        - link "已有账号，登录" [ref=e37] [cursor=pointer]:
+          - /url: /sign-in
+    - generic [ref=e39]: Scroll
+  - generic [ref=e44]:
+    - generic [ref=e45]:
+      - paragraph [ref=e46]: 01 / 认证
+      - heading "多重验证" [level=2] [ref=e47]
+      - paragraph [ref=e48]: 支持多种认证方式，为你的账号构建多层防护体系。
+    - generic [ref=e49]:
+      - generic [ref=e50] [cursor=pointer]:
+        - paragraph [ref=e51]: "01"
+        - heading "邮箱登录" [level=3] [ref=e52]
+        - paragraph [ref=e53]: 密码与邮箱验证码双重确认机制
+      - generic [ref=e54] [cursor=pointer]:
+        - paragraph [ref=e55]: "02"
+        - heading "TOTP" [level=3] [ref=e56]
+        - paragraph [ref=e57]: 基于时间的一次性密码标准协议
+      - generic [ref=e58] [cursor=pointer]:
+        - paragraph [ref=e59]: "03"
+        - heading "Passkey" [level=3] [ref=e60]
+        - paragraph [ref=e61]: WebAuthn 标准，硬件级安全保障
+      - generic [ref=e62] [cursor=pointer]:
+        - paragraph [ref=e63]: "04"
+        - heading "OAuth" [level=3] [ref=e64]
+        - paragraph [ref=e65]: 支持主流第三方平台联合登录
+  - generic [ref=e70]:
+    - generic [ref=e72]:
+      - generic [ref=e73]:
+        - img [ref=e75]
+        - generic [ref=e79]:
+          - paragraph [ref=e80]: StarApp
+          - paragraph [ref=e81]: star-app.example.com
+      - generic [ref=e82]:
+        - paragraph [ref=e83]: 请求以下权限
+        - generic [ref=e84]:
+          - generic [ref=e85]: 读取用户资料
+          - generic [ref=e86]:
+            - img [ref=e87]
+            - generic [ref=e89]: 已授权
+        - generic [ref=e90]:
+          - generic [ref=e91]: 管理邮箱地址
+          - generic [ref=e92]:
+            - img [ref=e93]
+            - generic [ref=e95]: 已授权
+        - generic [ref=e96]:
+          - generic [ref=e97]: 访问头像
+          - generic [ref=e98]:
+            - img [ref=e99]
+            - generic [ref=e101]: 已授权
+      - generic [ref=e102]:
+        - button "授权" [ref=e103]
+        - button "拒绝" [ref=e104]
+    - generic [ref=e105]:
+      - paragraph [ref=e106]: 02 / 授权
+      - heading "应用接入" [level=2] [ref=e107]
+      - paragraph [ref=e108]: OAuth 2.0 + OpenID Connect 标准协议，权限透明可查。
+      - generic [ref=e109]:
+        - generic [ref=e110]:
+          - paragraph [ref=e111]: OAuth 2.0
+          - paragraph [ref=e112]: 行业标准协议
+        - generic [ref=e113]:
+          - paragraph [ref=e114]: OIDC
+          - paragraph [ref=e115]: 身份认证标准
+  - generic [ref=e117]:
+    - paragraph [ref=e118]: 03 / 数据
+    - generic [ref=e119]:
+      - generic [ref=e120]:
+        - paragraph [ref=e121]: 99.9%
+        - paragraph [ref=e122]: 可用性
+        - paragraph [ref=e123]: 全年运行保障
+      - generic [ref=e124]:
+        - paragraph [ref=e125]: 50ms
+        - paragraph [ref=e126]: 响应速度
+        - paragraph [ref=e127]: 平均认证延迟
+      - generic [ref=e128]:
+        - paragraph [ref=e129]: 256-bit
+        - paragraph [ref=e130]: 加密等级
+        - paragraph [ref=e131]: AES端到端加密
+  - generic [ref=e134]:
+    - generic [ref=e135]:
+      - paragraph [ref=e136]: 04 / 特性
+      - heading "核心功能" [level=2] [ref=e137]
+    - generic [ref=e138]:
+      - generic [ref=e139] [cursor=pointer]:
+        - generic [ref=e140]:
+          - generic [ref=e141]: "01"
+          - generic [ref=e142]: 单点登录
+        - generic [ref=e143]: 一次登录，访问所有已授权应用
+      - generic [ref=e144] [cursor=pointer]:
+        - generic [ref=e145]:
+          - generic [ref=e146]: "02"
+          - generic [ref=e147]: 会话管理
+        - generic [ref=e148]: 查看并管理所有活跃会话
+      - generic [ref=e149] [cursor=pointer]:
+        - generic [ref=e150]:
+          - generic [ref=e151]: "03"
+          - generic [ref=e152]: 安全日志
+        - generic [ref=e153]: 完整的登录历史和操作记录
+      - generic [ref=e154] [cursor=pointer]:
+        - generic [ref=e155]:
+          - generic [ref=e156]: "04"
+          - generic [ref=e157]: 组织管理
+        - generic [ref=e158]: 创建团队，分配角色，管理成员
+      - generic [ref=e159] [cursor=pointer]:
+        - generic [ref=e160]:
+          - generic [ref=e161]: "05"
+          - generic [ref=e162]: API 接入
+        - generic [ref=e163]: 提供 RESTful API 和 SDK
+  - generic [ref=e165]:
+    - img [ref=e167]
+    - heading "准备好 开始了吗" [level=2] [ref=e171]:
+      - generic [ref=e172]: 准备好
+      - generic [ref=e173]: 开始了吗
+    - paragraph [ref=e174]: 免费注册，即刻拥有专属账号中心。
+    - link "创建账号" [ref=e175] [cursor=pointer]:
+      - /url: /sign-up
+      - text: 创建账号
+      - img [ref=e176]
+  - contentinfo [ref=e178]:
+    - generic [ref=e179]:
+      - generic [ref=e180]:
+        - img [ref=e181]
+        - paragraph [ref=e185]: StarX
+      - generic [ref=e186]:
+        - link "登录" [ref=e187] [cursor=pointer]:
+          - /url: /sign-in
+        - link "注册" [ref=e188] [cursor=pointer]:
+          - /url: /sign-up
+        - link "管理" [ref=e189] [cursor=pointer]:
+          - /url: /admin

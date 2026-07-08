@@ -4,7 +4,7 @@
 # Only this plugin (embedded LimboAPI); do not install a separate limboapi plugin.
 # 本地联调 forwarding 可用 NONE。生产 Paper 子服需 modern + forwarding.secret，见 velocity.prod.example.toml。
 # Dev: forwarding NONE is OK. Production Paper backends: modern + forwarding.secret — see velocity.prod.example.toml.
-config-version = "2.7"
+config-version = "2.8"
 bind = "0.0.0.0:25579"
 motd = "Velocity Server"
 show-max-players = 500
@@ -14,17 +14,28 @@ prevent-client-proxy-connections = false
 player-info-forwarding-mode = "NONE"
 
 [servers]
-lobby = "127.0.0.1:30066"
-factions = "127.0.0.1:30067"
-minigames = "127.0.0.1:30068"
-
-try = ["lobby"]
+	lobby = "127.0.0.1:30066"
+	factions = "127.0.0.1:30067"
+	minigames = "127.0.0.1:30068"
+	try = ["lobby"]
 
 [forced-hosts]
-"lobby.local" = ["lobby"]
-"factions.local" = ["factions"]
-"minigames.local" = ["minigames"]
+	"lobby.local" = ["lobby"]
+	"factions.local" = ["factions"]
+	"minigames.local" = ["minigames"]
 
 [query]
-enabled = false
+	enabled = false
 
+[packet-limiter]
+	#Size of the moving time window in seconds used to calculate average rates.
+	#A larger window tolerates short bursts while still enforcing the configured limits over time.
+	interval = 7
+	#Maximum average number of packets per second a client may send. -1 disables this check.
+	packets-per-second = -1
+	#Maximum average number of compressed (on-wire) bytes per second a client may send. -1 disables this check.
+	bytes-per-second = -1
+	#Maximum average number of decompressed bytes per second a client may send.
+	#Protects against compression bomb attacks where small packets expand to excessive sizes after decompression.
+	#-1 disables this check.
+	decompressed-bytes-per-second = 5242880

@@ -1,0 +1,24 @@
+# 同步时「当前目录」应为 重构/（与 backend、deploy 同级）
+# 用法见 rsync-deploy.example.sh
+
+node_modules
+**/node_modules
+.git
+dist
+**/dist
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+backend/data/store.json
+backend/data/store.json.tmp
+backend/data/uploads
+backend/data/backups
+backend/.env
+.env.development.local
+.env.production.local
+playwright-report
+test-results
+coverage
+stats.html
+**/.vite

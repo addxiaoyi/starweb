@@ -63,4 +63,8 @@ export class EventBus {
       }
     })
   }
+
+  hasSubscribers(event) {
+    return this.emitter.listenerCount(event) > 0
+  }
 }

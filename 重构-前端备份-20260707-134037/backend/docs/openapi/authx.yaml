@@ -1,0 +1,533 @@
+openapi: 3.0.3
+info:
+  title: StarMC 网站 — AuthX 联动 API
+  description: |
+    本文件描述 **网站后端**（starmc-api）上与 AuthX 插件相关的路由，以及通过环境变量
+    `AUTHX_PLUGIN_BASE` 转发到插件内置 HTTP 的管理接口。
+
+    - 插件出站回调网站：`integration.callback` → `POST /api/plugin/authx/callback`（已弃用，建议迁移到 `/api/v1/plugin/callback` 或 `/api/v2/plugin/callback`）
+    - 网站代管转发插件：`AUTHX_PLUGIN_BASE` + `X-AuthX-Admin-Secret`
+
+    **直连 Velocity-Limbo-Auth（VLA）**：设置环境变量 `AUTHX_PLUGIN_ADAPTER=vla`、`AUTHX_VLA_API_KEY`
+    （与插件 `http-api.api-key` 一致）；健康探测默认依次尝试 `GET /healthz`、`GET /v1/health`，可用
+    `AUTHX_PLUGIN_HEALTH_PATHS` 覆盖（逗号分隔）。管理接口会映射为 VLA 的 `POST /v1/admin/*`、`POST /v1/link/*` 与 `X-API-Key`。
+
+    - 插件开启 `http-api.write-security.require-hmac` 时，网站转发 POST 需额外设置 `AUTHX_VLA_HMAC_SECRET`（与插件 `hmac-secret` 一致），
+      由后端自动加头 `X-VLA-Timestamp`、`X-VLA-Signature`（对「时间戳 + 换行 + 原始 JSON 字符串」做 HMAC-SHA256 后转 hex）。
+    - 插件 `outbound-webhooks` 指向本站回调时，设置 `AUTHX_VLA_WEBHOOK_SECRET`（单密钥）或 `AUTHX_VLA_WEBHOOK_SECRETS`（多行或 `|` 分隔，与多条 endpoint `secret` 对应）；
+      任一条密钥验签通过即接受。签名：`X-VLA-Signature` = `hex(HMAC-SHA256(secret, 原始 body 字符串))`（与皮肤 webhook 一致）。
+
+    插件侧嵌入式 HTTP 契约见 AuthX 仓库：`docs/openapi/authx-plugin-http.yaml`（与 `authx-plugin.yaml` 同内容，供清单引用）
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:3000
+    description: 本地开发（按实际端口调整）
+
+paths:
+  /api/v1/plugin/callback:
+    post: &pluginCallbackOp
+      summary: 接收插件登录等事件回调
+      description: |
+        请求体为 JSON（原始字节验签）。
+
+        - **VLA outbound-webhooks**：配置 `AUTHX_VLA_WEBHOOK_SECRET` / `AUTHX_VLA_WEBHOOK_SECRETS` 时，须带 `X-VLA-Signature`（hex HMAC-SHA256(secret, UTF-8 body)）。
+        - **AuthX**：若配置 `AUTHX_CALLBACK_SECRET`，需 `X-AuthX-Secret`；可选 `X-AuthX-Timestamp` + `X-AuthX-Signature`（base64url，与 AuthX WebhookSignature 对齐）。
+        **签名字节必须与 HTTP 原始 body 完全一致**（不会用 `JSON.stringify` 重序列化）。
+      parameters:
+        - name: X-VLA-Signature
+          in: header
+          description: VLA 出站事件 / 皮肤类 webhook（hex）
+          schema: { type: string }
+        - name: X-AuthX-Secret
+          in: header
+          schema: { type: string }
+        - name: X-AuthX-Timestamp
+          in: header
+          schema: { type: string }
+        - name: X-AuthX-Signature
+          in: header
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event: { type: string, example: login_success }
+                ts_ms: { type: integer }
+                username: { type: string }
+                uuid: { type: string }
+                method: { type: string, description: "VLA：password_login、trusted_device 等" }
+                remoteAddress: { type: string }
+                authMethod: { type: string }
+                fingerprint: { type: string }
+                deviceFingerprint: { type: string }
+                external_user_id: { type: string }
+                source: { type: string }
+                reason: { type: string }
+      responses: &pluginCallbackResponses
+        "200":
+          description: "`{ ok: true, id }`"
+        "400":
+          description: 请求体非法或缺少必要字段
+        "401":
+          description: 密钥或签名校验失败
+        "503":
+          description: 生产环境未配置 webhook 认证密钥
+
+  /api/v2/plugin/callback:
+    post: *pluginCallbackOp
+
+  /api/v1/plugin/bind-email:
+    post: &pluginBindEmailOp
+      summary: 接收插件邮箱绑定回调
+      description: 接收插件邮箱绑定回调
+      parameters:
+        - name: X-VLA-Signature
+          in: header
+          schema: { type: string }
+        - name: X-AuthX-Secret
+          in: header
+          schema: { type: string }
+        - name: X-AuthX-Timestamp
+          in: header
+          schema: { type: string }
+        - name: X-AuthX-Signature
+          in: header
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string }
+                username: { type: string }
+                external_user_id: { type: string }
+                uuid: { type: string }
+                current_ip: { type: string }
+      responses: &pluginBindEmailResponses
+        "200":
+          description: |
+            同步处理完成，返回绑定结果：
+            `{ ok: true, userId, email, mcUsername, mcUuid, created }`
+            若 `created=true` 表示为新邮箱创建了网站账号。
+        "400":
+          description: 请求体非法、邮箱格式错误、缺少 username 或角色名长度非法
+        "401":
+          description: 密钥或签名校验失败
+        "409":
+          description: 角色或邮箱已被其他账号绑定
+        "502":
+          description: VLA 命令执行失败或不可达
+        "503":
+          description: 生产环境未配置 webhook 认证密钥
+
+  /api/v2/plugin/bind-email:
+    post: *pluginBindEmailOp
+
+  /api/plugin/authx/callback:
+    post:
+      <<: *pluginCallbackOp
+      deprecated: true
+      summary: 接收插件登录等事件回调（已弃用）
+      description: |
+        请求体为 JSON（原始字节验签）。
+
+        - **VLA outbound-webhooks**：配置 `AUTHX_VLA_WEBHOOK_SECRET` / `AUTHX_VLA_WEBHOOK_SECRETS` 时，须带 `X-VLA-Signature`（hex HMAC-SHA256(secret, UTF-8 body)）。
+        - **AuthX**：若配置 `AUTHX_CALLBACK_SECRET`，需 `X-AuthX-Secret`；可选 `X-AuthX-Timestamp` + `X-AuthX-Signature`（base64url，与 AuthX WebhookSignature 对齐）。
+        **签名字节必须与 HTTP 原始 body 完全一致**（不会用 `JSON.stringify` 重序列化）。
+
+        **Deprecated:** 请迁移到 `/api/v1/plugin/callback` 或 `/api/v2/plugin/callback`。
+      responses:
+        <<: *pluginCallbackResponses
+        "200":
+          description: "`{ ok: true, id }`"
+          headers:
+            Sunset:
+              description: 该路径预计退役时间（RFC 7231），当前为 "Thu, 31 Dec 2026 00:00:00 GMT"
+              schema: { type: string }
+            Deprecation:
+              description: deprecation 标志，当前为 "true"
+              schema: { type: string }
+
+  /api/plugin/authx/bind-email:
+    post:
+      <<: *pluginBindEmailOp
+      deprecated: true
+      summary: 接收插件邮箱绑定回调（已弃用）
+      description: |
+        **Deprecated:** 请迁移到 `/api/v1/plugin/bind-email` 或 `/api/v2/plugin/bind-email`。
+      responses:
+        <<: *pluginBindEmailResponses
+        "200":
+          description: "{ ok: true, created, userId, email, linkedMcUsername, linkedMcUuid, externalUserId }"
+          headers:
+            Sunset:
+              description: "Thu, 31 Dec 2026 00:00:00 GMT"
+              schema: { type: string }
+            Deprecation:
+              description: "true"
+              schema: { type: string }
+
+  /api/plugin/authx/events:
+    get:
+      summary: 查询已记录的插件回调事件（内存/持久化 store）
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: X-Admin-Secret
+          in: header
+          description: 生产环境若配置 devAdminSecret 则必填
+          schema: { type: string }
+      responses:
+        "200":
+          description: "{ ok, total, items[] }"
+
+  /api/admin/authx/plugin-metrics:
+    get:
+      summary: 代理 VLA `GET /v1/metrics/prometheus`（仅 AUTHX_PLUGIN_ADAPTER=vla）
+      description: "返回 Prometheus 文本；生产环境若配置 `DEV_ADMIN_SECRET` 则须 `X-Admin-Secret`。"
+      parameters:
+        - name: X-Admin-Secret
+          in: header
+          schema: { type: string }
+      responses:
+        "200":
+          description: text/plain Prometheus
+        "400":
+          description: 非 vla 适配器
+        "502":
+          description: 插件不可达
+
+  /api/admin/authx/kick-online:
+    post:
+      summary: 网站管理端 → 转发 VLA 踢当前在线（POST /v1/admin/kick-online）
+      parameters:
+        - name: X-Admin-Secret
+          in: header
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+                external_user_id: { type: string }
+                usernames:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: "`{ ok, kicked }` 等插件 JSON"
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
+
+  /api/admin/authx/ban-check:
+    get:
+      summary: 代理 VLA `GET /v1/ban?name=`（是否封禁）
+      description: "须 `AUTHX_PLUGIN_ADAPTER=vla`；独立限流见 `RATE_LIMIT_ADMIN_PLUGIN_GET`。"
+      parameters:
+        - name: X-Admin-Secret
+          in: header
+          schema: { type: string }
+        - name: name
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: "{ banned, reason? }"
+        "400":
+          description: 非 vla / 缺少 name
+        "403":
+          description: "插件 `expose-ban-check: false`"
+
+  /api/admin/authx/user-exists:
+    get:
+      summary: 代理 VLA `GET /v1/user/exists?name=`
+      parameters:
+        - name: X-Admin-Secret
+          in: header
+          schema: { type: string }
+        - name: name
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: "{ exists: boolean }"
+
+  /api/admin/authx/ban:
+    post:
+      summary: 代理 VLA `POST /v1/admin/ban`（封禁/解封）
+      description: "须 `http-api.allow-writes: true`；请求体与插件一致。"
+      parameters:
+        - name: X-Admin-Secret
+          in: header
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                banned: { type: boolean }
+                reason: { type: string }
+      responses:
+        "200":
+          description: "{ ok: true }"
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
+
+  /api/admin/authx/delete-user:
+    post:
+      summary: 代理 VLA `POST /v1/admin/delete-user`（注销游戏账号）
+      parameters:
+        - name: X-Admin-Secret
+          in: header
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+      responses:
+        "200":
+          description: "{ ok: true }"
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
+
+  /api/admin/authx/skin-refresh:
+    post:
+      summary: 代理 VLA `POST /v1/skin/refresh`（拉取档案并可选 webhook）
+      parameters:
+        - name: X-Admin-Secret
+          in: header
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                uuid: { type: string }
+      responses:
+        "200":
+          description: "{ ok: true }"
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
+
+  /api/admin/authx/link-external-user:
+    post:
+      summary: 代理 VLA `POST /v1/link/external-user`（运维绑定/解绑网站主键）
+      description: "与玩家自助绑定不同，可指定任意 `username` 与 `external_user_id`（空字符串解绑）。"
+      parameters:
+        - name: X-Admin-Secret
+          in: header
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                external_user_id: { type: string }
+      responses:
+        "200":
+          description: "{ ok: true }"
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
+
+  /api/admin/authx/plugin-health:
+    get:
+      summary: 探测 AuthX 插件桥 `GET /healthz`（经 `AUTHX_PLUGIN_BASE`）
+      description: |
+        用于编排/监控。生产环境若配置 `DEV_ADMIN_SECRET` 则需在请求头携带 `X-Admin-Secret`。
+        超时由环境变量 `AUTHX_PLUGIN_REQUEST_MS` 控制（默认 10000 ms）。
+        VLA `/v1/health` 返回 JSON 时，响应体 `plugin.parsed` 含 `database_ok`、`version` 等（便于仪表盘）。
+      parameters:
+        - name: X-Admin-Secret
+          in: header
+          schema: { type: string }
+      responses:
+        "200":
+          description: 插件可达且返回 2xx
+        "502":
+          description: 不可达、超时或非 2xx
+
+  /api/admin/authx/reset-password:
+    post:
+      summary: 网站管理端 → 转发插件重置密码
+      parameters:
+        - name: X-Admin-Secret
+          in: header
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                newPassword: { type: string }
+      responses:
+        "200":
+          description: 插件返回 JSON 透传
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
+
+  /api/admin/authx/bind-email:
+    post:
+      summary: 网站管理端 → 转发插件绑定邮箱
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                email: { type: string }
+      responses:
+        "200":
+          description: 插件返回 JSON 透传
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
+
+  /api/admin/authx/unbind-device:
+    post:
+      summary: 网站管理端 → 转发插件解绑设备
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string }
+                device: { type: string }
+      responses:
+        "200":
+          description: 插件返回 JSON 透传
+        "502":
+          $ref: "#/components/responses/VlaCommandFailed"
+
+  /api/docs/openapi/authx:
+    get:
+      summary: 返回本 OpenAPI 文档（YAML）
+      responses:
+        "200":
+          description: text/yaml
+
+  /api/auth/oauth/providers:
+    get:
+      summary: 是否启用第三方 OAuth（如 Google）
+      responses:
+        "200":
+          description: "{ google: boolean }"
+
+  /api/auth/oauth/google/start:
+    get:
+      summary: 跳转 Google 授权（需配置 OAUTH_GOOGLE_*）
+      parameters:
+        - name: redirect
+          in: query
+          description: 登录成功后浏览器重定向的站内路径（如 /profile）
+        - name: mc_username
+          in: query
+          description: 可选；若 OAuth 成功且邮箱已验证，则自动 POST /v1/link/external-user
+      responses:
+        "302":
+          description: Redirect to accounts.google.com
+
+  /api/user/mc-account:
+    get:
+      summary: 当前用户已绑定角色的 VLA 详情（代理 GET /v1/user/detail）
+      description: |
+        须 `AUTHX_PLUGIN_ADAPTER=vla`；仅允许查询本站 `linkedMcUsername` 对应角色。
+        限流：`RATE_LIMIT_MC_USER`（默认每分钟 60 次，按 IP）。
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 插件 JSON（username、uuid、banned、external_user_id 等）
+        "400":
+          description: 未绑定角色 / 非 vla
+        "401":
+          description: 未登录
+        "403":
+          description: 邮箱未验证
+
+  /api/user/mc-profiles:
+    get:
+      summary: 当前网站用户下所有游戏角色（代理 GET /v1/user/profiles）
+      description: "`external_user_id` 固定为登录用户 id，忽略客户端篡改。"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        "200":
+          description: "{ profiles, count }"
+
+  /api/user/mc-security-events:
+    get:
+      summary: 已绑定角色最近登录审计（代理 GET /v1/security/events）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 100 }
+      responses:
+        "200":
+          description: "{ events, count }"
+
+  /api/user/link-minecraft:
+    post:
+      summary: 已验证邮箱用户绑定游戏名到 VLA（POST /v1/link/external-user）
+      security:
+        - bearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username: { type: string, description: "游戏内角色名" }
+      responses:
+        "200":
+          description: "{ ok, linkedMcUsername }"
+        "403":
+          description: 邮箱未验证或插件返回错误
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  responses:
+    VlaCommandFailed:
+      description: "插件命令执行失败或插件不可达，返回 { ok: false, message, code: plugin_command_failed }"
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              ok: { type: boolean, example: false }
+              success: { type: boolean, example: false }
+              message: { type: string, example: 插件命令执行失败 }
+              code: { type: string, example: plugin_command_failed }
+              details: { type: object }

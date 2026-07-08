@@ -53,12 +53,35 @@ function getHandler(app, method, path) {
   return route.handlers.at(-1)
 }
 
+async function invokeRoute(app, method, path, req, res) {
+  const route = findRoute(app, method, path)
+  let idx = 0
+  const next = () => {
+    idx++
+    if (idx < route.handlers.length) {
+      return route.handlers[idx](req, res, next)
+    }
+  }
+  if (route.handlers.length > 0) {
+    await route.handlers[0](req, res, next)
+  }
+}
+
+const ALL_VLA_EVENTS = Object.values(Events).filter((e) => e.startsWith('vla:command:'))
+
 function createMockEventBus(reply = { ok: true, result: { status: 200, json: { ok: true, source: 'eventBus' } } }) {
   const calls = []
+  const subscribers = new Set(ALL_VLA_EVENTS)
   return {
     calls,
+    subscribers,
+    hasSubscribers(event) { return subscribers.has(event) },
+    _addSubscriber(event) { subscribers.add(event) },
     async publishAndWait(event, payload) {
       calls.push({ event, payload })
+      if (!subscribers.has(event)) {
+        throw new Error(`event-bus: no reply for ${event} within 15000ms`)
+      }
       return reply
     },
   }
@@ -80,6 +103,9 @@ function createDeps(overrides = {}) {
       return res
     },
     eventBus: createMockEventBus(),
+    circuitBreakerStatus: { failures: 0, isOpen: false, halfOpenAfter: 0 },
+    pluginFetchCounters: { total: 0, success: 0, failed: 0 },
+    eventHandlerFailures: [],
     ...overrides,
   }
 }
@@ -151,7 +177,7 @@ describe('authxAdmin routes', () => {
       await getHandler(app, 'GET', '/api/admin/authx/plugin-metrics')({}, res)
 
       assert.strictEqual(res.statusCode, 400)
-      assert.strictEqual(res.body.code, 'plugin_metrics_requires_vla')
+      assert.strictEqual(res.body.code, 'vla_adapter_required')
       assert.strictEqual(res.body.message, '当前接口仅支持 VLA 适配器')
     })
   })
@@ -275,6 +301,28 @@ describe('authxAdmin routes', () => {
       assert.strictEqual(res.statusCode, 400)
       assert.strictEqual(res.body.message, '缺少 name')
       assert.strictEqual(res.body.code, 'validation_error')
+    })
+  })
+
+  describe('GET /api/admin/authx/circuit-breaker', () => {
+    it('returns circuit breaker state and counters', async () => {
+      const app = createAppStub()
+      const deps = createDeps({
+        circuitBreakerStatus: { failures: 3, isOpen: true, halfOpenAfter: Date.now() + 10000 },
+        pluginFetchCounters: { total: 100, success: 80, failed: 20 },
+        eventHandlerFailures: [{ event: 'test:event', errorMessage: 'oops', timestamp: new Date().toISOString() }],
+      })
+      registerAuthxAdminRoutes(app, deps)
+
+      const res = createMockRes()
+      await getHandler(app, 'GET', '/api/admin/authx/circuit-breaker')({}, res)
+
+      assert.strictEqual(res.statusCode, 200)
+      assert.strictEqual(res.body.failures, 3)
+      assert.strictEqual(res.body.isOpen, true)
+      assert.ok(res.body.remainingCooldownMs > 0)
+      assert.deepStrictEqual(res.body.counters, { total: 100, success: 80, failed: 20 })
+      assert.strictEqual(res.body.recentHandlerFailures.length, 1)
     })
   })
 
@@ -541,9 +589,111 @@ describe('authxAdmin routes', () => {
     })
   })
 
+  describe('POST rate limiter', () => {
+    it('applies adminPluginGetLimiter to command routes', () => {
+      const limiterCalls = []
+      const app = createAppStub()
+      const deps = createDeps({
+        adminPluginGetLimiter: (_req, _res, next) => {
+          limiterCalls.push('called')
+          if (typeof next === 'function') next()
+        },
+      })
+      registerAuthxAdminRoutes(app, deps)
+
+      const commandPaths = app.routes.filter((r) => r.method === 'POST')
+      assert.ok(commandPaths.length > 0)
+      for (const route of commandPaths) {
+        assert.strictEqual(route.handlers.length >= 2, true, `${route.path} should have limiter middleware`)
+        assert.strictEqual(typeof route.handlers[0], 'function')
+      }
+    })
+
+    it('limiter middleware is called before command handler', async () => {
+      const limiterCalls = []
+      const eventBus = createMockEventBus({
+        ok: true,
+        result: { status: 200, json: { ok: true } },
+      })
+      const app = createAppStub()
+      const deps = createDeps({
+        adminPluginGetLimiter: (_req, _res, next) => {
+          limiterCalls.push('called')
+          if (typeof next === 'function') next()
+        },
+        eventBus,
+      })
+      registerAuthxAdminRoutes(app, deps)
+
+      const res = createMockRes()
+      const req = { body: { username: 'Steve' } }
+      await invokeRoute(app, 'POST', '/api/admin/authx/reset-password', req, res)
+
+      assert.strictEqual(limiterCalls.length, 1)
+      assert.strictEqual(limiterCalls[0], 'called')
+    })
+  })
+
+  describe('GET /api/admin/authx/plugin-stats', () => {
+    it('returns stats with empty history', async () => {
+      const app = createAppStub()
+      const deps = createDeps({
+        pluginFetchCounters: { total: 0, success: 0, failed: 0, history: [] },
+      })
+      registerAuthxAdminRoutes(app, deps)
+
+      const res = createMockRes()
+      await getHandler(app, 'GET', '/api/admin/authx/plugin-stats')({ query: {} }, res)
+
+      assert.strictEqual(res.statusCode, 200)
+      assert.strictEqual(res.body.total, 0)
+      assert.strictEqual(res.body.trend.length, 24)
+      assert.strictEqual(res.body.latency.p50, 0)
+    })
+
+    it('returns stats with history data', async () => {
+      const now = Date.now()
+      const history = []
+      for (let i = 0; i < 10; i++) {
+        history.push({ ts: now - i * 60 * 1000, ok: true, latencyMs: 100 + i * 10 })
+      }
+      const app = createAppStub()
+      const deps = createDeps({
+        pluginFetchCounters: { total: 10, success: 10, failed: 0, history },
+      })
+      registerAuthxAdminRoutes(app, deps)
+
+      const res = createMockRes()
+      await getHandler(app, 'GET', '/api/admin/authx/plugin-stats')({ query: { range: '15m' } }, res)
+
+      assert.strictEqual(res.statusCode, 200)
+      assert.strictEqual(res.body.total, 10)
+      assert.strictEqual(res.body.trend.length, 15)
+      assert.ok(res.body.latency.p50 > 0)
+    })
+  })
+
+  describe('GET /api/admin/authx/circuit-breaker without history', () => {
+    it('does not expose history field in counters', async () => {
+      const app = createAppStub()
+      const deps = createDeps({
+        circuitBreakerStatus: { failures: 0, isOpen: false, halfOpenAfter: 0 },
+        pluginFetchCounters: { total: 1, success: 1, failed: 0, history: [{ ts: Date.now(), ok: true, latencyMs: 50 }] },
+      })
+      registerAuthxAdminRoutes(app, deps)
+
+      const res = createMockRes()
+      await getHandler(app, 'GET', '/api/admin/authx/circuit-breaker')({}, res)
+
+      assert.strictEqual(res.statusCode, 200)
+      assert.strictEqual(res.body.counters.history, undefined)
+    })
+  })
+
   describe('eventBus ok:false handling', () => {
     it('returns 502 when publishAndWait throws', async () => {
       const eventBus = {
+        hasSubscribers: () => true,
         async publishAndWait() {
           throw new Error('event bus timeout')
         },

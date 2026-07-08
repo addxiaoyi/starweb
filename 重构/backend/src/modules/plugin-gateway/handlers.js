@@ -6,6 +6,7 @@ import {
   verifyPluginInboundWebhook,
 } from './adapter.js'
 import { Events } from '../event-bus/events.js'
+import { isPlainObject } from '../event-bus/utils.js'
 
 /**
  * @param {import('express').Request} req
@@ -85,6 +86,9 @@ export function createPluginGatewayHandlers(deps) {
     if (!result.ok) return result
 
     const { body } = result
+    if (!isPlainObject(body)) {
+      return jsonErr(res, 400, '请求体必须是 JSON 对象', 'validation_error')
+    }
     const event = String(body.event || '').trim()
     if (!event) {
       return jsonErr(res, 400, '缺少 event', 'validation_error')
@@ -125,7 +129,10 @@ export function createPluginGatewayHandlers(deps) {
       }
       return res.json({ ok: true, ...reply.result })
     } catch (err) {
-      return jsonErr(res, 502, '绑定处理失败', 'bind_email_failed', { reason: err.message })
+      const code = err.code || 'bind_email_failed'
+      const status = err.status || 502
+      const message = err.message || '绑定处理失败'
+      return jsonErr(res, status, '绑定处理失败', 'bind_email_failed')
     }
   })
 

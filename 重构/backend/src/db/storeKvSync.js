@@ -22,7 +22,8 @@ export const STORE_KV_KEYS = [
   'async_tasks',
   'dead_letter_queue',
   'skin_metrics',
-  'skin_sync_tasks'
+  'skin_sync_tasks',
+  'circuit_state'
 ]
 
 const dirtyKeys = new Set()
@@ -142,6 +143,10 @@ function payloadForKey(key, store) {
         : {}
     case 'skin_sync_tasks':
       return Array.isArray(store.skinSyncTasks) ? store.skinSyncTasks : []
+    case 'circuit_state':
+      return store.circuitState && typeof store.circuitState === 'object'
+        ? { failures: Number(store.circuitState.failures || 0), isOpen: Boolean(store.circuitState.isOpen), halfOpenAfter: Number(store.circuitState.halfOpenAfter || 0) }
+        : { failures: 0, isOpen: false, halfOpenAfter: 0 }
     default:
       return null
   }
@@ -226,6 +231,11 @@ function applyPayload(key, store, raw) {
       break
     case 'skin_sync_tasks':
       if (Array.isArray(p)) store.skinSyncTasks = JSON.parse(JSON.stringify(p))
+      break
+    case 'circuit_state':
+      if (p && typeof p === 'object') {
+        store.circuitState = { failures: Number(p.failures || 0), isOpen: Boolean(p.isOpen), halfOpenAfter: Number(p.halfOpenAfter || 0) }
+      }
       break
     default:
       break

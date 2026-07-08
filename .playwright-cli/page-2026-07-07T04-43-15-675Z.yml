@@ -1,0 +1,166 @@
+- generic [ref=e3]:
+  - generic "正在启动 StarMC" [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - img "StarMC Logo" [ref=e8]
+        - generic [ref=e9]:
+          - paragraph [ref=e10]: StarMC
+          - heading "正在进入星系" [level=1] [ref=e11]
+          - paragraph [ref=e12]: 初始化资源、连接服务、准备工作区。
+      - generic [ref=e16]:
+        - generic [ref=e17]: Loading
+        - generic [ref=e18]: 100%
+  - link "跳转到主要内容" [ref=e19] [cursor=pointer]:
+    - /url: "#main-content"
+  - contentinfo [ref=e20]:
+    - generic [ref=e22]:
+      - generic [ref=e23]:
+        - heading "StarMC" [level=2] [ref=e24]:
+          - img [ref=e25]
+          - text: StarMC
+        - paragraph [ref=e30]: 探索无限可能，创造属于你的世界。StarMC 致力于为玩家提供最优质的 Minecraft 游戏体验，包含生存、创造、小游戏等多种模式。
+        - generic [ref=e31]:
+          - link "GitHub" [ref=e32] [cursor=pointer]:
+            - /url: https://github.com/addxiaoyi
+            - img [ref=e33]
+          - link "Bilibili" [ref=e36] [cursor=pointer]:
+            - /url: https://space.bilibili.com/3546915199256973
+            - img [ref=e37]
+          - link "MC百科" [ref=e41] [cursor=pointer]:
+            - /url: https://center.mcmod.cn/1150040/
+            - img [ref=e42]
+          - link "MineBBS" [ref=e46] [cursor=pointer]:
+            - /url: https://www.minebbs.com/threads/rpg-pylon.41891/
+            - img [ref=e47]
+        - paragraph [ref=e54]:
+          - img [ref=e55]
+          - text: 正在加载每日一言
+      - generic [ref=e59]:
+        - heading "联系我们" [level=3] [ref=e60]
+        - list [ref=e61]:
+          - listitem [ref=e62]:
+            - img [ref=e63] [cursor=pointer]
+            - link "QQ群 764970620" [ref=e67] [cursor=pointer]:
+              - /url: https://qm.qq.com/q/zeZJxXkAy6
+          - listitem [ref=e68]:
+            - img [ref=e69] [cursor=pointer]
+            - link "2293237813@qq.com" [ref=e73] [cursor=pointer]:
+              - /url: mailto:2293237813@qq.com
+          - listitem [ref=e74]:
+            - img [ref=e75] [cursor=pointer]
+            - link "Discord 社区" [ref=e78] [cursor=pointer]:
+              - /url: https://discord.gg/JNXsCFVCYG
+      - generic [ref=e79]:
+        - heading "当前时间" [level=3] [ref=e80]
+        - generic [ref=e81]:
+          - generic [ref=e82]: 12:43:15
+          - generic [ref=e83]:
+            - generic [ref=e84]: 2026-07-07
+            - generic [ref=e85]: 周二
+      - generic [ref=e86]:
+        - heading "形象与认证" [level=3] [ref=e87]
+        - link "皮肤工作站 点击管理您的 3D 角色形象" [ref=e89] [cursor=pointer]:
+          - /url: /skin
+          - generic [ref=e90]:
+            - img [ref=e91]
+            - generic [ref=e96]:
+              - paragraph [ref=e97]: 皮肤工作站
+              - paragraph [ref=e98]: 点击管理您的 3D 角色形象
+    - generic [ref=e101]:
+      - generic [ref=e102]:
+        - heading "官方网站" [level=3] [ref=e103]
+        - generic [ref=e104]:
+          - link "Minecraft官网" [ref=e106] [cursor=pointer]:
+            - /url: https://www.minecraft.net/zh-hans
+          - link "Minecraft教育版" [ref=e108] [cursor=pointer]:
+            - /url: https://education.minecraft.net/
+          - link "反馈社区" [ref=e110] [cursor=pointer]:
+            - /url: https://feedback.minecraft.net/
+      - generic [ref=e111]:
+        - heading "非官方论坛" [level=3] [ref=e112]
+        - generic [ref=e113]:
+          - link "Minecraft Forum" [ref=e115] [cursor=pointer]:
+            - /url: https://www.minecraftforum.net/
+          - link "MCFlare" [ref=e117] [cursor=pointer]:
+            - /url: https://forum.mcflare.com/
+          - link "MineBBS" [ref=e119] [cursor=pointer]:
+            - /url: https://www.minebbs.com/
+    - generic [ref=e122]:
+      - generic [ref=e124]:
+        - text: © 2026
+        - strong [ref=e125]: StarMC Network
+        - text: . ALL RIGHTS RESERVED.
+      - generic [ref=e128]: "制作者 ADDXxiaoyi312048 | 核心代码量: 32158"
+      - link "WIKI" [ref=e132] [cursor=pointer]:
+        - /url: https://addxiaoyi.codeberg.page/starmc-wiki-page/
+        - img [ref=e133]
+        - text: WIKI
+  - region "赞助信息" [ref=e137]:
+    - generic [ref=e139]:
+      - paragraph [ref=e140]: 感谢每一位支持 StarMC 的伙伴，你们的支持是我们前进的动力
+      - generic [ref=e141]:
+        - generic [ref=e143] [cursor=pointer]:
+          - generic [ref=e144]:
+            - heading "应萧" [level=3] [ref=e146]
+            - generic [ref=e147]: ¥200.00
+          - generic [ref=e148]: "\"什么都没有说捏\""
+        - generic [ref=e150] [cursor=pointer]:
+          - generic [ref=e151]:
+            - heading "Lighthouse" [level=3] [ref=e153]
+            - generic [ref=e154]: ¥100.00
+          - generic [ref=e155]: "\"什么都没有说捏\""
+        - generic [ref=e157] [cursor=pointer]:
+          - generic [ref=e158]:
+            - heading "裁汰" [level=3] [ref=e160]
+            - generic [ref=e161]: ¥100.00
+          - generic [ref=e162]: "\"什么都没有说捏\""
+        - generic [ref=e164] [cursor=pointer]:
+          - generic [ref=e165]:
+            - heading "穹" [level=3] [ref=e167]
+            - generic [ref=e168]: ¥100.00
+          - generic [ref=e169]: "\"什么都没有说捏\""
+        - generic [ref=e171] [cursor=pointer]:
+          - generic [ref=e172]:
+            - heading "lk小李同学" [level=3] [ref=e174]
+            - generic [ref=e175]: ¥50.00
+          - generic [ref=e176]: "\"什么都没有说捏\""
+        - generic [ref=e178] [cursor=pointer]:
+          - generic [ref=e179]:
+            - heading "Elysia" [level=3] [ref=e181]
+            - generic [ref=e182]: ¥50.00
+          - generic [ref=e183]: "\"什么都没有说捏\""
+        - generic [ref=e185] [cursor=pointer]:
+          - generic [ref=e186]:
+            - heading "xiaocha" [level=3] [ref=e188]
+            - generic [ref=e189]: ¥35.00
+          - generic [ref=e190]: "\"什么都没有说捏\""
+        - generic [ref=e192] [cursor=pointer]:
+          - generic [ref=e193]:
+            - heading "咕咕咕 (veryvegetable)" [level=3] [ref=e195]
+            - generic [ref=e196]: ¥33.61
+          - generic [ref=e197]: "\"什么都没有说捏\""
+        - generic [ref=e199] [cursor=pointer]:
+          - generic [ref=e200]:
+            - heading "nighttalk团队" [level=3] [ref=e202]
+            - generic [ref=e203]: ¥10.00
+          - generic [ref=e204]: "\"什么都没有说捏\""
+        - generic [ref=e206] [cursor=pointer]:
+          - generic [ref=e207]:
+            - heading "大宽" [level=3] [ref=e209]
+            - generic [ref=e210]: ¥10.00
+          - generic [ref=e211]: "\"什么都没有说捏\""
+        - generic [ref=e213] [cursor=pointer]:
+          - generic [ref=e214]:
+            - heading "蓝草莓" [level=3] [ref=e216]
+            - generic [ref=e217]: ¥7.00
+          - generic [ref=e218]: "\"什么都没有说捏\""
+        - generic [ref=e220] [cursor=pointer]:
+          - generic [ref=e221]:
+            - heading "WBD" [level=3] [ref=e223]
+            - generic [ref=e224]: ¥5.00
+          - generic [ref=e225]: "\"什么都没有说捏\""
+        - generic [ref=e227] [cursor=pointer]:
+          - generic [ref=e228]:
+            - heading "TvT" [level=3] [ref=e230]
+            - generic [ref=e231]: ¥5.00
+          - generic [ref=e232]: "\"什么都没有说捏\""

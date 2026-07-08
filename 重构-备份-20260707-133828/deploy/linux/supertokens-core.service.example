@@ -1,0 +1,34 @@
+# SuperTokens Core（裸机）systemd 示例
+#
+# 前提：你已执行 deploy/linux/install-supertokens-core-no-docker.sh，
+# 并生成 /opt/supertokens/supertokens 启动器。
+# 或直接用 deploy/linux/setup-supertokens-core-systemd.sh 一键生成并启动服务。
+#
+# 安装步骤（root）：
+#   sudo bash deploy/linux/install-supertokens-core-no-docker.sh --plugin postgresql --tag 11.4.4
+#   sudo install -d -o supertokens -g supertokens -m 0750 /etc/supertokens
+#   sudo cp deploy/linux/supertokens-core.env.example /etc/supertokens/core.env
+#   sudo chmod 600 /etc/supertokens/core.env
+#   sudoedit /etc/supertokens/core.env
+#   sudo install -m 0644 deploy/linux/supertokens-core.service.example /etc/systemd/system/supertokens-core.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now supertokens-core
+
+[Unit]
+Description=SuperTokens Core
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=supertokens
+Group=supertokens
+EnvironmentFile=/etc/supertokens/core.env
+WorkingDirectory=/opt/supertokens
+ExecStart=/opt/supertokens/supertokens
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

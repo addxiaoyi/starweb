@@ -44,6 +44,8 @@ describe('skinRefresh route', () => {
       },
     }
     eventBus = new EventBus({ error: () => {} })
+    const noop = () => {}
+    eventBus.subscribe(Events.PLUGIN_SKIN_REFRESH_RECEIVED, noop)
     publishedEvents = []
     const originalPublish = eventBus.publish.bind(eventBus)
     eventBus.publish = (event, payload) => {
@@ -206,5 +208,27 @@ describe('skinRefresh route', () => {
     }
 
     assert.strictEqual(publishedEvents.length, 0)
+  })
+
+  it('returns queued:false when no subscriber for PLUGIN_SKIN_REFRESH_RECEIVED', async () => {
+    const busWithoutSub = new EventBus({ error: () => {} })
+    registerSkinRefreshRoutes(app, {
+      config: { pluginRefreshSecret: 'secret' },
+      jsonErr: createJsonErr(),
+      eventBus: busWithoutSub,
+    })
+
+    const req = createReq({
+      headers: { 'x-skin-bridge-secret': 'secret' },
+      body: { username: 'Steve' },
+    })
+    const res = createRes()
+
+    await app.routes[0].handler(req, res)
+
+    assert.strictEqual(res.statusCode, 200)
+    assert.strictEqual(res.body.ok, true)
+    assert.strictEqual(res.body.queued, false)
+    assert.strictEqual(res.body.warning, '无皮肤刷新处理程序在线')
   })
 })

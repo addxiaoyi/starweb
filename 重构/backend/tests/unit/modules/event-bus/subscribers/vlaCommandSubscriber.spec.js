@@ -6,6 +6,12 @@ import { registerVlaCommandSubscriber } from '../../../../../src/modules/event-b
 const SAMPLE_COMMANDS = [
   [Events.VLA_COMMAND_KICK_ONLINE, '/api/plugin/authx/admin/kick-online'],
   [Events.VLA_COMMAND_BAN, '/api/plugin/authx/admin/ban'],
+  [Events.VLA_COMMAND_DELETE_USER, '/api/plugin/authx/admin/delete-user'],
+  [Events.VLA_COMMAND_SKIN_REFRESH, '/api/plugin/authx/admin/skin-refresh'],
+  [Events.VLA_COMMAND_LINK_EXTERNAL_USER, '/api/plugin/authx/admin/link-external-user'],
+  [Events.VLA_COMMAND_RESET_PASSWORD, '/api/plugin/authx/admin/reset-password'],
+  [Events.VLA_COMMAND_BIND_EMAIL, '/api/plugin/authx/admin/bind-email'],
+  [Events.VLA_COMMAND_UNBIND_DEVICE, '/api/plugin/authx/admin/unbind-device'],
   // NOTIFY_BIND_EMAIL 与 BIND_EMAIL 共用同一个 admin 端点
   [Events.VLA_COMMAND_NOTIFY_BIND_EMAIL, '/api/plugin/authx/admin/bind-email'],
 ]

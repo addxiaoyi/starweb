@@ -25,7 +25,7 @@ export function registerSkinRefreshSubscriber(bus, deps) {
       return
     }
 
-    logger.debug?.('[skin-refresh-subscriber] forwarding skin refresh to VLA command', { body })
+    logger.debug('[skin-refresh-subscriber] forwarding skin refresh to VLA command', { body })
     bus.publish(Events.VLA_COMMAND_SKIN_REFRESH, { body: body || {} })
   })
 }

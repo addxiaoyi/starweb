@@ -48,6 +48,9 @@ export function registerSkinRefreshRoutes(app, deps) {
       return jsonErr(res, 400, '缺少 username', 'validation_error')
     }
 
+    if (!eventBus.hasSubscribers(Events.PLUGIN_SKIN_REFRESH_RECEIVED)) {
+      return res.json({ ok: true, queued: false, warning: '无皮肤刷新处理程序在线' })
+    }
     eventBus.publish(Events.PLUGIN_SKIN_REFRESH_RECEIVED, { body })
     return res.json({ ok: true, queued: true })
   }))

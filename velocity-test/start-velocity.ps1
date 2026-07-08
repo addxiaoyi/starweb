@@ -50,7 +50,17 @@ function Import-EnvFile {
 Import-EnvFile (Join-Path $root '.env.velocity.generated')
 Import-EnvFile (Join-Path $root '.env.velocity')
 
-$jar = Get-ChildItem -LiteralPath $root -Filter 'velocity*.jar' -File | Sort-Object Name | Select-Object -First 1
+# 优先选版本号较新的 Velocity jar（例如 velocity-3.5.1-xxx.jar），
+# 排除无版本号的 empty placeholder velocity.jar。
+$jars = Get-ChildItem -LiteralPath $root -Filter 'velocity*.jar' -File |
+    Where-Object { $_.Name -ne 'velocity.jar' } |
+    Sort-Object Length -Descending
+$jar = $jars | Select-Object -First 1
+if (-not $jar) {
+    # fallback: allow velocity.jar if nothing else found
+    $jar = Get-ChildItem -LiteralPath $root -Filter 'velocity*.jar' -File |
+        Sort-Object Length -Descending | Select-Object -First 1
+}
 if (-not $jar) {
     Write-Host "未找到 velocity*.jar。请从 https://papermc.io/downloads/velocity 下载 Velocity（3.4.x 配 Java 17+，3.5.x 配 Java 21+），将 jar 放在本目录。" -ForegroundColor Yellow
     Write-Host 'No velocity jar found. Download Velocity from Paper and place the jar in this directory.' -ForegroundColor Yellow

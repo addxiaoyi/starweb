@@ -1,8 +1,6 @@
 import { Events } from '../events.js'
+import { MC_USERNAME } from '../../plugin-gateway/constants.js'
 import { PluginBindEmailError } from '../../plugin-gateway/bindEmailService.js'
-
-const MIN_MC_USERNAME_LENGTH = 3
-const MAX_MC_USERNAME_LENGTH = 16
 
 const DEFAULT_MESSAGES = {
   link_failed: '绑定失败',
@@ -75,7 +73,7 @@ export function registerBindEmailSubscriber(bus, deps) {
       if (!isValidEmailAddress(email)) {
         throw new PluginBindEmailError('invalid_email', 400)
       }
-      if (!mcUsername || mcUsername.length < MIN_MC_USERNAME_LENGTH || mcUsername.length > MAX_MC_USERNAME_LENGTH) {
+      if (!mcUsername || mcUsername.length < MC_USERNAME.MIN_LENGTH || mcUsername.length > MC_USERNAME.MAX_LENGTH) {
         throw new PluginBindEmailError('validation_error', 400)
       }
 
