@@ -1,0 +1,9 @@
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "StarMC",
+  "description": "纯净生存 Minecraft 服务器与皮肤站",
+  "url": "https://star-web.top",
+  "applicationCategory": "GameApplication",
+  "operatingSystem": "Web"
+}

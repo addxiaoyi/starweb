@@ -1,0 +1,40 @@
+openapi: 3.0.3
+info:
+  title: StarMC AuthX plugin bridge
+  version: 1.0.0
+  description: Server-side AuthX bridge callbacks and read-only event feed.
+servers:
+  - url: https://star-web.top
+paths:
+  /api/plugin/authx/callback:
+    post:
+      summary: Receive a signed AuthX event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '202':
+          description: Event accepted
+        '401':
+          description: Invalid callback signature
+        '503':
+          description: Callback secret is not configured
+  /api/plugin/authx/events:
+    get:
+      summary: Read recent AuthX events
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Event list
+        '401':
+          description: Authentication required
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

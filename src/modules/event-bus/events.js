@@ -1,0 +1,15 @@
+export const Events = {
+  PLUGIN_CALLBACK_RECEIVED: 'plugin.callback.received',
+  PLUGIN_BIND_EMAIL_RECEIVED: 'plugin.bind_email.received',
+  PLUGIN_SKIN_REFRESH_RECEIVED: 'plugin.skin_refresh.received',
+  AUTH_LOGIN_SUCCESS: 'auth.login.success',
+  AUTH_LOGIN_FAILED: 'auth.login.failed',
+  AUTH_VERIFY_COMPLETED: 'auth.verify.completed',
+  AUTH_VERIFY_FAILED: 'auth.verify.failed',
+  SECURITY_ALERT_RAISED: 'security.alert.raised',
+  USER_BIND_EMAIL_COMPLETED: 'user.bind_email.completed',
+  VLA_COMMAND_KICK: 'vla.command.kick',
+  VLA_COMMAND_BAN: 'vla.command.ban',
+  VLA_COMMAND_GENERIC: 'vla.command.generic',
+  EVENT_HANDLER_FAILED: '__handler_failed__',
+}

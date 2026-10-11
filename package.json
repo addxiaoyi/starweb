@@ -1,0 +1,43 @@
+{
+  "name": "starmc-backend",
+  "private": true,
+  "version": "0.3.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "dev:simple": "node src/envLayering.js --run src/server.js",
+    "start": "node src/envLayering.js --run src/server.js",
+    "start:simple": "node src/envLayering.js --run src/server.js",
+    "lint": "eslint src/ tests/",
+    "test": "node --test tests/**/*.test.js tests/**/*.spec.js tests/unit/**/*.js",
+    "test:plugin-e2e": "node --test tests/plugin-enrollment-http-e2e.test.js",
+    "test:modules": "node --test tests/*-module-smoke.test.js tests/module-routes-register-smoke.test.js",
+    "verify": "npm run lint && npm test",
+    "doctor:simple": "node src/envLayering.js --run scripts/doctor-simple.mjs",
+    "probe:bridge": "node scripts/check-plugin-bridge.mjs",
+    "db:migrate": "node src/envLayering.js --run scripts/db-migrate.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "multer": "^2.2.0",
+    "nodemailer": "9.0.3",
+    "otpauth": "^9.4.0",
+    "pg": "^8.13.3",
+    "sharp": "^0.35.3",
+    "supertokens-node": "16.7.6"
+  },
+  "overrides": {
+    "brace-expansion": "1.1.18",
+    "cookie": "0.7.2",
+    "nodemailer": "9.0.3"
+  },
+  "devDependencies": {
+    "eslint": "^9.22.0"
+  }
+}

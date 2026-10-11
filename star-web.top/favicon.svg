@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <style>
+    @keyframes colorChange {
+      0% { fill: #10b981; }
+      25% { fill: #3b82f6; }
+      50% { fill: #8b5cf6; }
+      75% { fill: #f59e0b; }
+      100% { fill: #10b981; }
+    }
+    .planet-body {
+      animation: colorChange 8s linear infinite;
+    }
+    .pixel {
+      shape-rendering: crispEdges;
+    }
+  </style>
+  <g class="pixel">
+    <!-- Outline -->
+    <path d="M12 4h8v2h-8zM8 6h4v2H8zM20 6h4v2h-4zM6 8h2v4H6zM24 8h2v4h-2zM4 12h2v8H4zM26 12h2v8h-2zM6 20h2v4H6zM24 20h2v4h-2zM8 24h4v2H8zM20 24h4v2h-4zM12 26h8v2h-8z" fill="#000" />
+    <!-- Body -->
+    <path class="planet-body" d="M12 6h8v2h-8zM10 8h12v2H10zM8 10h16v2H8zM6 12h20v8H6zM8 20h16v2H8zM10 22h12v2H10zM12 24h8v2h-8z" />
+    <!-- Craters -->
+    <path d="M12 10h4v4h-4zM20 14h2v2h-2zM10 18h2v2h-2z" fill="rgba(0,0,0,0.2)" />
+    <!-- Highlights -->
+    <path d="M10 10h2v2h-2zM8 14h2v4H8z" fill="rgba(255,255,255,0.4)" />
+  </g>
+</svg>

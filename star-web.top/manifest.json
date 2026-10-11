@@ -1,0 +1,13 @@
+﻿{
+  "name": "StarMC",
+  "short_name": "StarMC",
+  "description": "自由生存 Minecraft 服务器",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#0a0a0c",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/favicon.ico", "sizes": "16x16 32x32", "type": "image/x-icon" }
+  ]
+}

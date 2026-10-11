@@ -1,0 +1,90 @@
+openapi: 3.0.3
+info:
+  title: StarMC Map Configuration API
+  version: '2026-08-27'
+  description: |
+    地图配置与社区地标接口。站点公开地图配置无需认证；管理员配置写入接口需要登录管理员权限。
+servers:
+  - url: https://star-web.top
+paths:
+  /api/public/site-config:
+    get:
+      summary: 获取公开站点配置（含地图列表）
+      tags: [Map]
+      responses:
+        '200':
+          description: 配置载荷
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicSiteConfigResponse'
+  /api/map/anchors:
+    get:
+      summary: 获取公开社区地标
+      tags: [Map]
+      responses:
+        '200':
+          description: 地标列表
+  /api/admin/site-config:
+    patch:
+      summary: 更新站点地图配置
+      tags: [Map]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [maps]
+              properties:
+                maps:
+                  type: array
+                  maxItems: 12
+                  items:
+                    $ref: '#/components/schemas/MapConfig'
+      responses:
+        '200':
+          description: 配置已更新
+        '400':
+          description: 配置校验失败
+        '401':
+          description: 未登录
+        '403':
+          description: 非管理员
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sAccessToken
+  schemas:
+    MapConfig:
+      type: object
+      required: [id, name, url]
+      properties:
+        id:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{1,40}$'
+        name:
+          type: string
+          maxLength: 80
+        url:
+          type: string
+          description: 外部地图页面 URL，或使用 native 表示内置坐标图
+        apiUrl:
+          type: string
+          description: 可选 JSON 数据接口，支持 markers 或 players 数组
+    PublicSiteConfigResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        config:
+          type: object
+          properties:
+            maps:
+              type: array
+              items:
+                $ref: '#/components/schemas/MapConfig'

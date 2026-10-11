@@ -1,0 +1,139 @@
+openapi: 3.0.3
+info:
+  title: StarMC Frontend Public API
+  version: '2026-07-11'
+  description: |
+    新前端 SPA 对接用公开/会话 API 摘要。完整皮肤/安全/管理端路由见
+    `GET /api/docs/api-contract` 与仓库 `重构/backend/README.md`。
+servers:
+  - url: http://127.0.0.1:8787
+    description: 本地 API（开发时 Vite 代理同源 `/api`）
+paths:
+  /api/public/bootstrap:
+    get:
+      summary: SPA 启动引导（功能开关 + 认证能力 + 端点索引）
+      tags: [Public]
+      responses:
+        '200':
+          description: 引导载荷
+  /api/public/site-features:
+    get:
+      summary: 功能开关（扁平结构，兼容旧前端）
+      tags: [Public]
+      responses:
+        '200':
+          description: 功能开关
+  /api/auth/status:
+    get:
+      summary: SuperTokens / SMTP 就绪状态
+      tags: [Auth]
+      responses:
+        '200':
+          description: 认证基础设施状态
+  /api/auth/verify-code/send:
+    post:
+      summary: 邮箱验证码登录（发送）
+      tags: [Auth]
+      responses:
+        '200':
+          description: 已发送
+  /api/auth/verify-code/confirm:
+    post:
+      summary: 邮箱验证码登录（确认并建会话）
+      tags: [Auth]
+      responses:
+        '200':
+          description: 登录成功
+  /api/user/me:
+    get:
+      summary: 当前用户资料
+      tags: [User]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: 用户对象
+        '401':
+          description: 未登录
+  /api/user/permissions:
+    get:
+      summary: 角色与能力（路由/按钮门禁）
+      tags: [User]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: 权限摘要
+  /api/user/center/summary:
+    get:
+      summary: 个人中心聚合数据
+      tags: [User]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: 中心摘要
+  /api/security/center:
+    get:
+      summary: 安全中心仪表盘
+      tags: [Security]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: 安全中心数据
+  /api/skins/library/stream:
+    get:
+      summary: 皮肤库 SSE（catalog_sync / heartbeat）
+      tags: [Skins]
+      responses:
+        '200':
+          description: text/event-stream
+  /api/skins/library/sync-status:
+    get:
+      summary: 皮肤库同步状态（SSE 降级轮询）
+      tags: [Skins]
+      responses:
+        '200':
+          description: 同步状态
+  /api/public/skin-profile/{mcSegment}:
+    get:
+      summary: 公开皮肤档案（VLA 与前端预览共用）
+      tags: [Skins]
+      parameters:
+        - in: path
+          name: mcSegment
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 皮肤纹理元数据
+  /api/metrics/web-vitals:
+    post:
+      summary: 前端 Core Web Vitals 上报
+      tags: [Telemetry]
+      responses:
+        '204':
+          description: 已接收
+  /api/telemetry:
+    post:
+      summary: 前端路由/事件遥测
+      tags: [Telemetry]
+      responses:
+        '204':
+          description: 已接收
+  /api/docs/api-contract:
+    get:
+      summary: API 契约 Markdown
+      tags: [Docs]
+      responses:
+        '200':
+          description: text/markdown
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sAccessToken
+      description: SuperTokens 会话 Cookie；所有 fetch 需 credentials include

@@ -1,0 +1,1 @@
+const s=/^\d{5,12}$/,q=n=>{const t=String(n??"").trim();return s.test(t)?t:null},r=n=>{const t=q(n);return t?`https://q.qlogo.cn/headimg_dl?dst_uin=${t}&spec=640&img_type=jpg`:null};export{q as n,r as q};

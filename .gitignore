@@ -1,0 +1,30 @@
+# Dependencies and local runtime state
+node_modules/
+data/
+.env
+.env.*
+!.env.example
+
+# Generated output and local caches
+coverage/
+dist/
+build/
+src/graphify-out/
+*.log
+*.pid
+*.sqlite
+*.sqlite3
+*.db
+
+# Recovery and production artifacts
+starmc-frontend-build-20260804/
+frontend-dist-pay.tar.gz
+backup/
+backups/
+*.bak
+*.backup
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
