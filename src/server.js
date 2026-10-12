@@ -1591,16 +1591,11 @@ function createApiApp({ eventBus }) {
 
   app.use(express.json({ limit: '512kb' }))
   app.use(geoBlockMiddleware())
-  // SECURITY NET-1: apply the previously-dead globalLimiter and authLimiter.
-  // Before this fix, both were defined in middleware/http.js but never
-  // mounted on the main API, leaving every public endpoint wide-open to
-  // credential-stuffing and brute-force floods.  Per-IP limits cap sustained
-  // load on a single address while still letting normal browser clients
-  // through.  Health and webhook routes keep their dedicated, looser limits
-  // by mounting these globally first and overriding the limit on the
-  // specific paths.
+  // Keep the broad flood guard global, but scope the stricter auth guard to auth paths.
+  // Mounting authLimiter globally throttles normal catalog/profile traffic after a short burst.
   app.use(globalLimiter)
-  app.use(authLimiter)
+  app.use('/api/auth', authLimiter)
+  app.use('/auth', authLimiter)
   app.post('/api/auth/resolve-identifier', asyncHandler(async (req, res) => {
     const identifier = String(req.body?.identifier || '').trim()
     if (!identifier || identifier.includes('@')) return jsonErr(res, 400, '请输入有效的邮箱或用户名', 'invalid_identifier')
