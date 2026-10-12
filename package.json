@@ -17,6 +17,7 @@
     "verify": "npm run lint && npm test",
     "doctor:simple": "node src/envLayering.js --run scripts/doctor-simple.mjs",
     "probe:bridge": "node scripts/check-plugin-bridge.mjs",
+    "stress:public": "node scripts/stress-public-api.mjs",
     "db:migrate": "node src/envLayering.js --run scripts/db-migrate.mjs"
   },
   "dependencies": {
