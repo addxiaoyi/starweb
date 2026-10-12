@@ -1,32 +1,49 @@
-import { officialCapeHashFromId } from '../cape/officialCatalog.js'
+import { fetchOfficialCapeCatalog, officialCapeHashFromId } from '../cape/officialCatalog.js'
 
 const MINE_SKIN_ENDPOINT = 'https://api.mineskin.org/v2/skins'
 const mineSkinCache = new Map()
+
+function textureHashFromUrl(url) {
+  const match = /(?:textures\.minecraft\.net\/texture\/|\/texture\/)([a-f0-9]{64})(?:[?#]|$)/i.exec(String(url || '').trim())
+  return match ? match[1].toLowerCase() : ''
+}
+
+async function resolveMineSkinCapeUuid(capeUrl) {
+  const hash = textureHashFromUrl(capeUrl)
+  if (!hash) return null
+  const catalog = await fetchOfficialCapeCatalog()
+  return String(catalog.get(hash)?.id || '').trim() || null
+}
 
 function mineSkinApiKey() {
   return String(process.env.MINESKIN_API_KEY || '').trim()
 }
 
-async function convertSkinUrlToProperty(textureUrl, model) {
-  const key = `${textureUrl}|${model}`
+async function convertSkinUrlToProperty(textureUrl, model, capeUrl = '') {
+  const key = `${textureUrl}|${model}|${capeUrl}`
   const cached = mineSkinCache.get(key)
   if (cached && cached.expiresAt > Date.now()) return cached.property
 
   const apiKey = mineSkinApiKey()
   if (!apiKey) return null
+  const capeUuid = capeUrl ? await resolveMineSkinCapeUuid(capeUrl) : null
+  const variant = model === 'slim' ? 'slim' : 'classic'
   const request = (body, headers = {}) => fetch(MINE_SKIN_ENDPOINT, {
     method: 'POST',
     headers: { authorization: `Bearer ${apiKey}`, ...headers },
     body,
     signal: AbortSignal.timeout(15_000),
   })
-  let response = await request(JSON.stringify({ url: textureUrl, variant: model === 'slim' ? 'slim' : 'classic' }), { 'content-type': 'application/json' })
+  const requestBody = { url: textureUrl, variant }
+  if (capeUuid) requestBody.cape = capeUuid
+  let response = await request(JSON.stringify(requestBody), { 'content-type': 'application/json' })
   if (!response.ok) {
     const imageResponse = await fetch(textureUrl, { signal: AbortSignal.timeout(15_000) })
     if (!imageResponse.ok) throw new Error(`texture fetch returned ${imageResponse.status}`)
     const form = new FormData()
     form.append('file', new Blob([await imageResponse.arrayBuffer()], { type: 'image/png' }), 'skin.png')
-    form.append('variant', model === 'slim' ? 'slim' : 'classic')
+    form.append('variant', variant)
+    if (capeUuid) form.append('cape', capeUuid)
     response = await request(form)
   }
   if (!response.ok) throw new Error(`MineSkin returned ${response.status}`)
@@ -43,7 +60,7 @@ export async function attachSignedSkinTexture(profile) {
   const textureUrl = String(profile?.textureUrl || '').trim()
   if (!textureUrl || profile?.textures?.SKIN?.value) return profile
   try {
-    const property = await convertSkinUrlToProperty(textureUrl, profile.model)
+    const property = await convertSkinUrlToProperty(textureUrl, profile.model, profile.capeUrl)
     if (!property) return { ...profile, textureError: 'skin_signature_not_configured' }
     return {
       ...profile,
