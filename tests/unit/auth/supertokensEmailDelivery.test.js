@@ -23,6 +23,7 @@ describe('Passwordless SMTP configuration', () => {
       host: 'smtp.example.com',
       port: 465,
       secure: true,
+      authEnabled: true,
       authUsername: 'mailer@example.com',
       password: 'test-password',
       from: { email: 'noreply@example.com', name: 'StarMC' },

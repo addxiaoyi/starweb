@@ -138,12 +138,13 @@ describe('qq module', () => {
 
       // Too short
       let res = await fakeRequest(app, 'POST', '/api/qq/verify', { body: { qqNumber: '123' } })
-      assert.strictEqual(res.status, 400)
-      assert.strictEqual(res.body.code, 'validation_error')
+      assert.strictEqual(res.status, 410)
+      assert.strictEqual(res.body.code, 'napcat_required')
 
-      // Non-numeric
+      // Website-side QQ binding is intentionally disabled.
       res = await fakeRequest(app, 'POST', '/api/qq/verify', { body: { qqNumber: 'abc12345' } })
-      assert.strictEqual(res.status, 400)
+      assert.strictEqual(res.status, 410)
+      assert.strictEqual(res.body.code, 'napcat_required')
     })
 
     it('binds QQ number successfully', async () => {
@@ -155,10 +156,8 @@ describe('qq module', () => {
       ))
 
       const res = await fakeRequest(app, 'POST', '/api/qq/verify', { body: { qqNumber: '123456789' } })
-      assert.strictEqual(res.status, 200)
-      assert.strictEqual(res.body.ok, true)
-      assert.strictEqual(res.body.qqNumber, '123456789')
-      assert.strictEqual(res.body.verified, false)
+      assert.strictEqual(res.status, 410)
+      assert.strictEqual(res.body.code, 'napcat_required')
     })
 
     it('returns 409 when QQ number is already bound to another user', async () => {
@@ -175,8 +174,8 @@ describe('qq module', () => {
       ))
 
       const res = await fakeRequest(app, 'POST', '/api/qq/verify', { body: { qqNumber: '123456789' } })
-      assert.strictEqual(res.status, 409)
-      assert.strictEqual(res.body.code, 'qq_already_bound')
+      assert.strictEqual(res.status, 410)
+      assert.strictEqual(res.body.code, 'napcat_required')
     })
   })
 

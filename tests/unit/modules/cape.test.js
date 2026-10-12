@@ -5,6 +5,8 @@ import { collectExpressPaths } from '../../helpers/collect-express-paths.js'
 import { registerCapeRoutes } from '../../../src/modules/cape/routes.js'
 import { asyncHandler } from '../../../src/middleware/error.js'
 
+const VALID_TEXTURE_URL = `https://textures.minecraft.net/texture/${'a'.repeat(64)}`
+
 // ── helpers ──────────────────────────────────────────────────
 
 function createMockDeps(storeOverrides = {}) {
@@ -42,6 +44,7 @@ function createMockDeps(storeOverrides = {}) {
     jsonErr,
     asyncHandler,
     requireUser,
+    getOfficialCapes: () => new Map(),
   }
 }
 
@@ -114,7 +117,7 @@ describe('cape module', () => {
     it('returns paginated results from catalog', async () => {
       const catalog = []
       for (let i = 1; i <= 25; i++) {
-        catalog.push({ id: `cape-${i}`, name: `Cape ${i}`, type: 'cape', author: 'Artist' })
+        catalog.push({ id: `cape-${i}`, name: `Cape ${i}`, type: 'cape', author: 'Artist', source: 'mojang-textures', textureUrl: VALID_TEXTURE_URL })
       }
       // Add a non-cape item that should be excluded
       catalog.push({ id: 'skin-1', name: 'A Skin', type: 'skin' })
@@ -133,9 +136,9 @@ describe('cape module', () => {
 
     it('filters by keyword', async () => {
       const catalog = [
-        { id: 'c1', name: 'Star Cape', type: 'cape', author: 'Alice', description: 'shiny' },
-        { id: 'c2', name: 'Moon Cloak', type: 'cape', author: 'Bob', description: 'dark' },
-        { id: 'c3', name: 'Sun Wrap', type: 'cape', author: 'Star Builder', description: 'warm' },
+        { id: 'c1', name: 'Star Cape', type: 'cape', author: 'Alice', description: 'shiny', source: 'mojang-textures', textureUrl: VALID_TEXTURE_URL },
+        { id: 'c2', name: 'Moon Cloak', type: 'cape', author: 'Bob', description: 'dark', source: 'mojang-textures', textureUrl: VALID_TEXTURE_URL },
+        { id: 'c3', name: 'Sun Wrap', type: 'cape', author: 'Star Builder', description: 'warm', source: 'mojang-textures', textureUrl: VALID_TEXTURE_URL },
       ]
 
       const app = express()
@@ -151,7 +154,7 @@ describe('cape module', () => {
 
     it('returns empty when no match', async () => {
       const catalog = [
-        { id: 'c1', name: 'Star Cape', type: 'cape' },
+        { id: 'c1', name: 'Star Cape', type: 'cape', source: 'mojang-textures', textureUrl: VALID_TEXTURE_URL },
       ]
       const app = express()
       registerCapeRoutes(app, createMockDeps({ catalog }))
@@ -167,7 +170,7 @@ describe('cape module', () => {
   describe('POST /api/cape/apply', () => {
     it('equips a cape from catalog', async () => {
       const catalog = [
-        { id: 'cape-001', name: 'Golden Cape', type: 'cape' },
+        { id: 'cape-001', name: 'Golden Cape', type: 'cape', source: 'mojang-textures', textureUrl: VALID_TEXTURE_URL },
       ]
       const app = express()
       app.use(express.json())

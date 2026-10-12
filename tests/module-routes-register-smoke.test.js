@@ -73,6 +73,7 @@ function createMockDeps() {
     pluginFetchCounters: {},
     authxWebhookCallbackLimiter: pass,
     eventBus: { publish: () => {} },
+    sessionCore: {},
     handleAuthxWebhook: () => ({ status: 200, json: { ok: true } }),
     handleBindEmail: () => ({ status: 200, json: { ok: true } }),
   }

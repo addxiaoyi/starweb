@@ -20,6 +20,10 @@ function createMockDeps(storeOverrides = {}) {
     res.status(status).json({ ok: false, success: false, message, code, error: code })
 
   const pass = (_req, _res, next) => next()
+  const requireUser = (req, _res, next) => {
+    req.user = req._testUser || { id: 'admin-1', email: 'admin@example.com', roles: ['admin'] }
+    next()
+  }
   const requireAdmin = (req, _res, next) => {
     req.user = req._testUser || { id: 'admin-1', email: 'admin@example.com', roles: ['admin'] }
     next()
@@ -33,6 +37,7 @@ function createMockDeps(storeOverrides = {}) {
     jsonOk,
     jsonErr,
     asyncHandler,
+    requireUser,
     requireAdmin,
     crypto,
   }

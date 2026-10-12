@@ -90,7 +90,7 @@ export function buildStarMcEmailContent({
       const group = safeCode.slice(start, start + EMAIL_CODE_GROUP_SIZE)
       const digits = [...group].map((digit, digitIndex) => `${digitIndex ? '<td style="width:8px;"></td>' : ''}<td class="code-digit" style="width:52px;height:58px;border:1px solid #71717a;background:#18181b;color:#ffffff;text-align:center;font-family:'StarMC Pixel Bold','Courier New',monospace;font-size:30px;font-weight:700;line-height:58px;">${escapeHtml(digit)}</td>`).join('')
       return `${groupIndex ? '<td class="code-group-gap" style="width:24px;"></td>' : ''}<td><table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr>${digits}</tr></table></td>`
-    }).join('')}</tr></table>`
+    }).join('')}</tr></table><span style="position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden;">Code: ${escapeHtml(safeCode)}</span>`
     : ''
   const noticeMarkup = safeNotice || safeNoticeEn
     ? `<p style="margin:0;padding-top:16px;border-top:1px solid #27272a;color:#a1a1aa;font-family:'StarMC Chinese Art','Microsoft YaHei',sans-serif;font-size:12px;line-height:20px;">${renderText(safeNotice)}${safeNotice && safeNoticeEn ? '<br>' : ''}<span style="font-family:'StarMC Pixel','Courier New',monospace;">${renderText(safeNoticeEn)}</span></p>`

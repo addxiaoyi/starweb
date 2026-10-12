@@ -245,7 +245,7 @@ describe('verifyCode module', () => {
           },
           confirmVerifyCodeLogin: async (_store, _body, hooks) => ({
             ok: true,
-            user: await hooks.onRegister('new@example.com', 'test-password'),
+            user: await hooks.onRegister('new@example.com', 'test-password', 'new_player'),
           }),
         },
       })
@@ -258,6 +258,7 @@ describe('verifyCode module', () => {
           email: 'new@example.com',
           code: '123456',
           mode: 'register',
+          username: 'new_player',
           password: 'test-password',
         },
       })

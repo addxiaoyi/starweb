@@ -28,6 +28,8 @@ export function registerPluginGatewayRoutes(app, deps) {
 
   app.post('/api/v1/plugin/callback', authxWebhookCallbackLimiter, webhookJson, runCallback)
   app.post('/api/v1/plugin/email-challenge/send', authxWebhookCallbackLimiter, webhookJson, runEmailChallenge)
+  // Keep the pre-1.1 endpoint working for older StarX nodes.
+  app.post('/api/v1/plugin/bind-email', authxWebhookCallbackLimiter, webhookJson, runEmailChallenge)
   app.post('/api/plugin/authx/callback', authxWebhookCallbackLimiter, webhookJson, (req, res, next) => {
     res.setHeader('Deprecation', 'true')
     res.setHeader('Sunset', '2026-12-31')

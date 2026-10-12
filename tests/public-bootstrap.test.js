@@ -24,6 +24,8 @@ function baseConfig(overrides = {}) {
     publicApiBaseUrl: 'http://127.0.0.1:8787',
     oauthGithubClientId: '',
     oauthGithubClientSecret: '',
+    oauthGithubRedirectUri: 'http://127.0.0.1:5173/auth/github/callback',
+    oauthStateSecret: 'test-oauth-state-secret',
     isProd: false,
     ...overrides,
   }
