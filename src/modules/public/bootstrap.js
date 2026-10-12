@@ -40,6 +40,7 @@ export function buildPublicSiteFeatures(ctx) {
     telemetryEnabled: config.telemetryEnabled,
     mojangSkinSyncEnabled: config.mojangSkinSyncEnabled,
     skinBridgePublicProfile: config.skinBridgePublicProfile,
+    skinSignatureConfigured: Boolean(String(process.env.MINESKIN_API_KEY || '').trim()),
     vlaNotifyOnSkinChange: config.vlaNotifyOnSkinChange,
     pluginBridge: {
       adapter: config.starxNetworkApiBase && config.starxNetworkApiKey
